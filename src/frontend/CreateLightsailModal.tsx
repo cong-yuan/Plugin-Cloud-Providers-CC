@@ -28,13 +28,21 @@ import {
   cn,
 } from "@termix-ssh/plugin-sdk/ui";
 import { toast } from "sonner";
-import type {
-  Account,
-  CloudApi,
-  LightsailBlueprint,
-  LightsailBundle,
-  TermixSnippet,
+import {
+  errorMessage,
+  type Account,
+  type CloudApi,
+  type LightsailBlueprint,
+  type LightsailBundle,
+  type TermixSnippet,
 } from "./api";
+
+function cleanAwsRegion(raw: string | null | undefined): string {
+  if (!raw) return "us-east-2";
+  const first = raw.split(/[\s,]+/)[0].trim();
+  const match = first.match(/^([a-z]{2}-[a-z]+-\d+)[a-z]?$/i);
+  return match ? match[1].toLowerCase() : first.toLowerCase() || "us-east-2";
+}
 
 const DEFAULT_BLUEPRINTS: LightsailBlueprint[] = [
   { id: "debian_12", name: "Debian 12 (Bookworm) - 推荐", type: "os" },
@@ -185,7 +193,7 @@ export function CreateLightsailModal({
   onSuccess,
   formatZone,
 }: CreateLightsailModalProps) {
-  const defaultRegion = (account.region || "us-east-2").split(",")[0].trim();
+  const defaultRegion = cleanAwsRegion(account.region);
   const [instanceName, setInstanceName] = useState("");
   const [zone, setZone] = useState(`${defaultRegion}a`);
   const [blueprintId, setBlueprintId] = useState("debian_12");
@@ -322,8 +330,8 @@ export function CreateLightsailModal({
       toast.success(`🎉 光帆实例 ${name} 创建成功！正在同步主机...`);
       onSuccess();
       onClose();
-    } catch (err: any) {
-      toast.error(err?.message || "创建光帆实例失败");
+    } catch (err: unknown) {
+      toast.error(errorMessage(err) || "创建光帆实例失败");
     } finally {
       setLoading(false);
     }

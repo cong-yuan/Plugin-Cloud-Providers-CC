@@ -151,6 +151,18 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
       settings?.instanceId ||
       (isHostLightsail ? `lightsail/${h.name}` : `host-${h.id}`);
 
+    const detailsTag = tags.find((t: string) =>
+      t.startsWith("cc-cloud:details:"),
+    );
+    let details: any = undefined;
+    if (detailsTag) {
+      try {
+        details = JSON.parse(
+          decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
+        );
+      } catch {}
+    }
+
     const regionTag = tags.find(
       (t: string) =>
         t.startsWith("cc-cloud:") &&
@@ -163,22 +175,10 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
           "cc-cloud:stopped",
         ].includes(t),
     );
-    const region = regionTag
-      ? regionTag.replace("cc-cloud:", "")
-      : account.region || "";
+    const region =
+      details?.availabilityZone ||
+      (regionTag ? regionTag.replace("cc-cloud:", "") : account.region || "");
     const isStopped = tags.includes("cc-cloud:stopped");
-
-    const detailsTag = tags.find((t: string) =>
-      t.startsWith("cc-cloud:details:"),
-    );
-    let details: any = undefined;
-    if (detailsTag) {
-      try {
-        details = JSON.parse(
-          decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
-        );
-      } catch {}
-    }
 
     const netTag = tags.find((t: string) => t.startsWith("cc-cloud:net:"));
     let network: any = undefined;
@@ -220,6 +220,56 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
   });
 }
 
+function toBaseAwsRegion(r: string | null | undefined): string {
+  if (!r) return "";
+  const trimmed = r.trim();
+  const match = trimmed.match(/^([a-z]{2}-[a-z]+-\d+)[a-z]$/i);
+  return match ? match[1].toLowerCase() : trimmed;
+}
+
+function formatInstanceSpec(instance: {
+  details?: any;
+  tags?: string[];
+}): string | null {
+  const details = instance.details;
+  if (details) {
+    const cpu = details.cpuCount;
+    const ram = details.ramSizeGb;
+
+    if (cpu && ram) {
+      const ramStr = ram < 1 ? `${Math.round(ram * 1024)}M` : `${ram}G`;
+      return `${cpu}H${ramStr}`;
+    }
+
+    if (details.bundleId) {
+      const b = String(details.bundleId).toLowerCase();
+      if (b.includes("nano")) return "1H512M";
+      if (b.includes("micro")) return "1H1G";
+      if (b.includes("small")) return "1H2G";
+      if (b.includes("medium")) return "2H4G";
+      if (b.includes("2xlarge")) return "8H32G";
+      if (b.includes("4xlarge")) return "16H64G";
+      if (b.includes("xlarge")) return "4H16G";
+      if (b.includes("large")) return "2H8G";
+      if (b.endsWith(".large")) return "2H4G";
+    }
+  }
+
+  const tags = Array.isArray(instance.tags) ? instance.tags : [];
+  for (const t of tags) {
+    const lower = t.toLowerCase();
+    if (lower.includes("nano")) return "1H512M";
+    if (lower.includes("micro")) return "1H1G";
+    if (lower.includes("small")) return "1H2G";
+    if (lower.includes("medium")) return "2H4G";
+    if (lower.includes("2xlarge")) return "8H32G";
+    if (lower.includes("xlarge")) return "4H16G";
+    if (lower.includes("large")) return "2H8G";
+  }
+
+  return null;
+}
+
 function getAccountRegions(
   account: Account,
   instances: Instance[] | undefined,
@@ -232,35 +282,48 @@ function getAccountRegions(
       .split(/[,，\s]+/)
       .map((r) => r.trim())
       .filter((r) => r && r.toLowerCase() !== "all")
-      .forEach((r) => set.add(r));
+      .forEach((r) => {
+        const base = toBaseAwsRegion(r);
+        if (base) set.add(base);
+      });
   }
 
-  if (instances && instances.length > 0) {
-    instances
-      .map((i) => i.region?.trim())
-      .filter((r): r is string => Boolean(r) && r.toLowerCase() !== "all")
-      .forEach((r) => set.add(r));
-  }
+  if (set.size === 0) {
+    if (instances && instances.length > 0) {
+      instances
+        .map((i) => (i.details?.availabilityZone || i.region)?.trim())
+        .filter((r): r is string => Boolean(r) && r.toLowerCase() !== "all")
+        .forEach((r) => {
+          const base = toBaseAwsRegion(r);
+          if (base) set.add(base);
+        });
+    }
 
-  const folder = account.folder || account.name;
-  const matchingHosts = (hosts || []).filter((h) => {
-    const settings =
-      h.pluginSettings?.["cc-cloud-providers"] ||
-      h.pluginSettings?.["cloud-providers"];
-    return settings?.accountId === account.id || h.folder === folder;
-  });
-  for (const h of matchingHosts) {
-    const tag = (h.tags || []).find(
-      (t: string) =>
-        t.startsWith("cc-cloud:") &&
-        ![
-          "cc-cloud:aws",
-          "cc-cloud:ecs",
-          "cc-cloud:lightsail",
-          "cc-cloud:stopped",
-        ].includes(t),
-    );
-    if (tag) set.add(tag.replace("cc-cloud:", ""));
+    const folder = account.folder || account.name;
+    const matchingHosts = (hosts || []).filter((h) => {
+      const settings =
+        h.pluginSettings?.["cc-cloud-providers"] ||
+        h.pluginSettings?.["cloud-providers"];
+      return settings?.accountId === account.id || h.folder === folder;
+    });
+    for (const h of matchingHosts) {
+      const tag = (h.tags || []).find(
+        (t: string) =>
+          t.startsWith("cc-cloud:") &&
+          !t.startsWith("cc-cloud:net:") &&
+          !t.startsWith("cc-cloud:details:") &&
+          ![
+            "cc-cloud:aws",
+            "cc-cloud:ecs",
+            "cc-cloud:lightsail",
+            "cc-cloud:stopped",
+          ].includes(t),
+      );
+      if (tag) {
+        const base = toBaseAwsRegion(tag.replace("cc-cloud:", ""));
+        if (base) set.add(base);
+      }
+    }
   }
 
   return Array.from(set);
@@ -943,6 +1006,9 @@ function CloudTab({ isVisible }: TabProps) {
                       instance.privateIp ||
                       "无公网 IP";
                     const isRunning = instance.state === "running";
+                    const displayZone =
+                      instance.details?.availabilityZone || instance.region;
+                    const spec = formatInstanceSpec(instance);
 
                     let networkInfo: {
                       icon: React.ReactNode;
@@ -1004,6 +1070,11 @@ function CloudTab({ isVisible }: TabProps) {
                               <span className="font-semibold text-foreground text-[13px] truncate">
                                 {instance.name}
                               </span>
+                              {spec && (
+                                <span className="inline-flex items-center rounded bg-purple-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-purple-600 dark:text-purple-400 border border-purple-500/25 font-mono">
+                                  {spec}
+                                </span>
+                              )}
                               {instance.imported && (
                                 <ListBadge tone="success">已导入</ListBadge>
                               )}
@@ -1017,8 +1088,13 @@ function CloudTab({ isVisible }: TabProps) {
                                   {ip}
                                 </code>
                               </span>
-                              {instance.region && (
-                                <span>· {formatAwsZone(instance.region)}</span>
+                              {spec && (
+                                <span className="font-medium text-foreground font-mono">
+                                  · {spec}
+                                </span>
+                              )}
+                              {displayZone && (
+                                <span>· {formatAwsZone(displayZone)}</span>
                               )}
                               <span>
                                 ·{" "}
@@ -1123,8 +1199,8 @@ function CloudTab({ isVisible }: TabProps) {
                               <div className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
                                 <span>可用区:</span>
                                 <code className="text-foreground font-mono bg-muted px-1.5 py-0.5 rounded border border-border/40">
-                                  {formatAwsZone(instance.region) ||
-                                    instance.region ||
+                                  {formatAwsZone(displayZone) ||
+                                    displayZone ||
                                     "未知"}
                                 </code>
                               </div>
@@ -1262,6 +1338,7 @@ function CloudTab({ isVisible }: TabProps) {
                                       硬件规格:
                                     </span>
                                     <span className="font-mono text-foreground">
+                                      {spec ? `${spec} · ` : ""}
                                       {instance.details?.cpuCount
                                         ? `${instance.details.cpuCount} 核 / ${instance.details.ramSizeGb} GB`
                                         : instance.details?.bundleId ||

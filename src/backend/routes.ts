@@ -8,6 +8,7 @@ import {
   getLightsailPortStates,
   openLightsailPort,
   closeLightsailPort,
+  cleanAwsRegion,
 } from "./providers/aws.js";
 import type { Credentials } from "./providers/index.js";
 import { SyncError, type AccountRow, type CloudSync } from "./sync.js";
@@ -498,6 +499,18 @@ export function registerRoutes(
                   .filter(Boolean)
               : [];
 
+          const detailsTag = tags.find((t: string) =>
+            t.startsWith("cc-cloud:details:"),
+          );
+          let details: any = undefined;
+          if (detailsTag) {
+            try {
+              details = JSON.parse(
+                decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
+              );
+            } catch {}
+          }
+
           const regionTag = tags.find(
             (t: string) =>
               t.startsWith("cc-cloud:") &&
@@ -510,25 +523,15 @@ export function registerRoutes(
                 "cc-cloud:stopped",
               ].includes(t),
           );
-          const region = regionTag
-            ? regionTag.replace("cc-cloud:", "")
-            : isLightsail
-              ? parts[1] || ""
-              : parts.length > 1
-                ? parts[0]
-                : "";
-
-          const detailsTag = tags.find((t: string) =>
-            t.startsWith("cc-cloud:details:"),
-          );
-          let details: any = undefined;
-          if (detailsTag) {
-            try {
-              details = JSON.parse(
-                decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
-              );
-            } catch {}
-          }
+          const region =
+            details?.availabilityZone ||
+            (regionTag
+              ? regionTag.replace("cc-cloud:", "")
+              : isLightsail
+                ? parts[1] || ""
+                : parts.length > 1
+                  ? parts[0]
+                  : "");
 
           const netTag = tags.find((t: string) =>
             t.startsWith("cc-cloud:net:"),
@@ -772,9 +775,9 @@ export function registerRoutes(
         }
 
         const creds = await sync.credentialsOf(row);
-        const targetRegion =
-          region ||
-          (creds.regions || creds.region || "us-east-2").split(",")[0].trim();
+        const targetRegion = cleanAwsRegion(
+          region || creds.regions || creds.region || "us-east-2",
+        );
 
         const result = await createLightsailInstance(ctx.fetch, creds, {
           instanceName: instanceName.trim(),
@@ -795,6 +798,10 @@ export function registerRoutes(
 
         res.json({ ok: true, instanceName: result.instanceName });
       } catch (error) {
+        ctx.log.error(
+          "Failed to create lightsail instance",
+          error instanceof Error ? error : new Error(String(error)),
+        );
         fail(res, error);
       }
     },

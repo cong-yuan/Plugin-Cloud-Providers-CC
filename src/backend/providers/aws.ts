@@ -564,6 +564,20 @@ export const AWS_REGION_NAMES: Record<string, string> = {
   "sa-east-1": "São Paulo",
 };
 
+export function cleanAwsRegion(raw: string | null | undefined): string {
+  if (!raw) return "us-east-2";
+  const first = raw.split(/[\s,]+/)[0].trim();
+  const match = first.match(/^([a-z]{2}-[a-z]+-\d+)[a-z]?$/i);
+  return match ? match[1].toLowerCase() : first.toLowerCase() || "us-east-2";
+}
+
+export function toBaseAwsRegion(r: string | null | undefined): string {
+  if (!r) return "";
+  const trimmed = r.trim();
+  const match = trimmed.match(/^([a-z]{2}-[a-z]+-\d+)[a-z]$/i);
+  return match ? match[1].toLowerCase() : trimmed;
+}
+
 export function formatAwsZone(raw: string | null | undefined): string {
   if (!raw) return "";
   const trimmed = raw.trim();
@@ -583,17 +597,6 @@ export function formatAwsZone(raw: string | null | undefined): string {
     return `${regName} (${trimmed})`;
   }
   return trimmed;
-}
-
-export interface CreateLightsailInput {
-  instanceName: string;
-  region: string;
-  availabilityZone?: string;
-  blueprintId: string;
-  bundleId: string;
-  keyPairName?: string;
-  userData?: string;
-  allocateStaticIp?: boolean;
 }
 
 export const DEFAULT_LIGHTSAIL_BLUEPRINTS = [
@@ -774,17 +777,30 @@ export async function createLightsailInstance(
   creds: Credentials,
   input: CreateLightsailInput,
 ): Promise<{ ok: boolean; instanceName: string }> {
-  const region = input.region || "us-east-2";
+  const region = cleanAwsRegion(
+    input.region || input.availabilityZone || "us-east-2",
+  );
   const url = `https://lightsail.${region}.amazonaws.com/`;
-  const zone = input.availabilityZone || `${region}a`;
+  let zone = input.availabilityZone?.trim();
+  if (!zone || !zone.startsWith(region)) {
+    zone = `${region}a`;
+  }
+
+  const isIpv6Bundle = input.bundleId.includes("ipv6");
+  const ipAddressType = isIpv6Bundle ? "ipv6" : "dualstack";
 
   const addOns: any[] = [];
   if (input.enableAutoSnapshot) {
+    const addOnReq: { snapshotTimeOfDay?: string } = {};
+    if (
+      input.snapshotTimeOfDay &&
+      /^[0-9]{2}:00$/.test(input.snapshotTimeOfDay.trim())
+    ) {
+      addOnReq.snapshotTimeOfDay = input.snapshotTimeOfDay.trim();
+    }
     addOns.push({
       addOnType: "AutoSnapshot",
-      autoSnapshotAddOnRequest: {
-        snapshotTimeOfDay: input.snapshotTimeOfDay || "00:00",
-      },
+      autoSnapshotAddOnRequest: addOnReq,
     });
   }
 
@@ -793,8 +809,9 @@ export async function createLightsailInstance(
     availabilityZone: zone,
     blueprintId: input.blueprintId,
     bundleId: input.bundleId,
-    keyPairName: input.keyPairName || undefined,
-    userData: input.userData || undefined,
+    ipAddressType,
+    keyPairName: input.keyPairName?.trim() || undefined,
+    userData: input.userData?.trim() || undefined,
   };
   if (addOns.length > 0) {
     payload.addOns = addOns;
@@ -969,13 +986,14 @@ export async function closeLightsailPort(
 export async function getLightsailPlans(
   fetch: PluginFetch,
   creds: Credentials,
-  region: string,
+  regionRaw: string,
 ): Promise<{
   blueprints: typeof DEFAULT_LIGHTSAIL_BLUEPRINTS;
   dualStackBundles: typeof DEFAULT_DUAL_STACK_BUNDLES;
   ipv6OnlyBundles: typeof DEFAULT_IPV6_ONLY_BUNDLES;
   zones: string[];
 }> {
+  const region = cleanAwsRegion(regionRaw);
   const fallbackZones = [`${region}a`, `${region}b`, `${region}c`];
   try {
     const url = `https://lightsail.${region}.amazonaws.com/`;

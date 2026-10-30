@@ -459,6 +459,7 @@ describe("aws", () => {
       availabilityZone: "us-east-2a",
       blueprintId: "debian_12",
       bundleId: "micro_3_0",
+      ipAddressType: "dualstack",
       addOns: [
         {
           addOnType: "AutoSnapshot",
