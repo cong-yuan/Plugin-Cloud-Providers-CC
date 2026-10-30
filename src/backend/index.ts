@@ -1,6 +1,6 @@
 import type { Router } from "express";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
-import { accounts, instances } from "./tables.js";
+import { accounts, instances, instanceCache } from "./tables.js";
 import { registerRoutes } from "./routes.js";
 import { createSync } from "./sync.js";
 
@@ -11,6 +11,7 @@ export async function activate(ctx: PluginContext) {
   const stores = {
     accounts: await ctx.db.define(accounts),
     instances: await ctx.db.define(instances),
+    instanceCache: await ctx.db.define(instanceCache),
   };
   const sync = createSync(ctx, stores);
 

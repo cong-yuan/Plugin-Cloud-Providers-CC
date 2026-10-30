@@ -147,7 +147,7 @@ function options(
 export function registerRoutes(
   router: Router,
   ctx: PluginContext,
-  stores: { accounts: any; instances: any },
+  stores: { accounts: any; instances: any; instanceCache: any },
   sync: CloudSync,
 ): void {
   const view = ctx.rbac.require("view") as never;
@@ -480,6 +480,14 @@ export function registerRoutes(
           .from(stores.instances)
           .where(eq(stores.instances.accountId, row.id));
 
+        const cachedList = await client
+          .select()
+          .from(stores.instanceCache)
+          .where(eq(stores.instanceCache.accountId, row.id));
+        const cacheByInstanceId = new Map<string, any>(
+          cachedList.map((c: any) => [c.instanceId, c]),
+        );
+
         let ownedHosts: any[] = [];
         try {
           ownedHosts = await ctx.hosts.listOwned();
@@ -509,6 +517,14 @@ export function registerRoutes(
                 decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
               );
             } catch {}
+          }
+          if (!details) {
+            const cached = cacheByInstanceId.get(m.instanceId);
+            if (cached?.details) {
+              try {
+                details = JSON.parse(cached.details);
+              } catch {}
+            }
           }
 
           const regionTag = tags.find(
@@ -889,12 +905,33 @@ export function registerRoutes(
         if (!row) return;
         const instanceId = String(req.query.instanceId || "");
         if (row.provider !== "aws" || !instanceId.startsWith("lightsail/")) {
-          res.json({ rules: [] });
+          res.json({ rules: [], cached: false });
           return;
         }
+        const forceRefresh = req.query.refresh === "true";
         const parts = instanceId.split("/");
         const region = parts[1] || "us-east-2";
         const instanceName = parts[2] || parts[parts.length - 1];
+
+        const client = await db();
+        const [cached] = await client
+          .select()
+          .from(stores.instanceCache)
+          .where(
+            and(
+              eq(stores.instanceCache.accountId, row.id),
+              eq(stores.instanceCache.instanceId, instanceId),
+            ),
+          );
+
+        // If cached and not forced to refresh, return cached rules immediately
+        if (!forceRefresh && cached?.portRules) {
+          try {
+            const rules = JSON.parse(cached.portRules);
+            res.json({ rules, cached: true });
+            return;
+          } catch {}
+        }
 
         const creds = await sync.credentialsOf(row);
         const rules = await getLightsailPortStates(
@@ -903,7 +940,25 @@ export function registerRoutes(
           region,
           instanceName,
         );
-        res.json({ rules });
+
+        // Update database cache
+        const rulesJson = JSON.stringify(rules);
+        if (cached) {
+          await client
+            .update(stores.instanceCache)
+            .set({ portRules: rulesJson, updatedAt: new Date().toISOString() })
+            .where(eq(stores.instanceCache.id, cached.id));
+        } else {
+          await client.insert(stores.instanceCache).values({
+            accountId: row.id,
+            instanceId,
+            portRules: rulesJson,
+            updatedAt: new Date().toISOString(),
+          });
+        }
+        await ctx.db.persist();
+
+        res.json({ rules, cached: false });
       } catch (error) {
         fail(res, error);
       }
@@ -947,7 +1002,47 @@ export function registerRoutes(
           protocol: String(protocol || "tcp").toLowerCase(),
           cidrs: Array.isArray(cidrs) ? cidrs : undefined,
         });
-        res.json({ ok: true });
+
+        // Re-fetch updated rules from AWS and update database cache
+        let rules: any[] = [];
+        try {
+          rules = await getLightsailPortStates(
+            ctx.fetch,
+            creds,
+            region,
+            instanceName,
+          );
+          const client = await db();
+          const [cached] = await client
+            .select()
+            .from(stores.instanceCache)
+            .where(
+              and(
+                eq(stores.instanceCache.accountId, row.id),
+                eq(stores.instanceCache.instanceId, instanceId),
+              ),
+            );
+          const rulesJson = JSON.stringify(rules);
+          if (cached) {
+            await client
+              .update(stores.instanceCache)
+              .set({
+                portRules: rulesJson,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(stores.instanceCache.id, cached.id));
+          } else {
+            await client.insert(stores.instanceCache).values({
+              accountId: row.id,
+              instanceId,
+              portRules: rulesJson,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          await ctx.db.persist();
+        } catch {}
+
+        res.json({ ok: true, rules });
       } catch (error) {
         fail(res, error);
       }
@@ -991,7 +1086,47 @@ export function registerRoutes(
           protocol: String(protocol || "tcp").toLowerCase(),
           cidrs: Array.isArray(cidrs) ? cidrs : undefined,
         });
-        res.json({ ok: true });
+
+        // Re-fetch updated rules from AWS and update database cache
+        let rules: any[] = [];
+        try {
+          rules = await getLightsailPortStates(
+            ctx.fetch,
+            creds,
+            region,
+            instanceName,
+          );
+          const client = await db();
+          const [cached] = await client
+            .select()
+            .from(stores.instanceCache)
+            .where(
+              and(
+                eq(stores.instanceCache.accountId, row.id),
+                eq(stores.instanceCache.instanceId, instanceId),
+              ),
+            );
+          const rulesJson = JSON.stringify(rules);
+          if (cached) {
+            await client
+              .update(stores.instanceCache)
+              .set({
+                portRules: rulesJson,
+                updatedAt: new Date().toISOString(),
+              })
+              .where(eq(stores.instanceCache.id, cached.id));
+          } else {
+            await client.insert(stores.instanceCache).values({
+              accountId: row.id,
+              instanceId,
+              portRules: rulesJson,
+              updatedAt: new Date().toISOString(),
+            });
+          }
+          await ctx.db.persist();
+        } catch {}
+
+        res.json({ ok: true, rules });
       } catch (error) {
         fail(res, error);
       }

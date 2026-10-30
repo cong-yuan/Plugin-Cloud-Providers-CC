@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Zap, Check, Loader2, Camera, FileCode, Network } from "lucide-react";
+import { useTranslation } from "@termix-ssh/plugin-sdk/frontend";
 import {
   Dialog,
   DialogContent,
@@ -36,7 +37,7 @@ function cleanAwsRegion(raw: string | null | undefined): string {
 }
 
 const DEFAULT_BLUEPRINTS: LightsailBlueprint[] = [
-  { id: "debian_12", name: "Debian 12 (Bookworm) - 推荐", type: "os" },
+  { id: "debian_12", name: "Debian 12 (Bookworm)", type: "os" },
   { id: "ubuntu_24_04", name: "Ubuntu 24.04 LTS", type: "os" },
   { id: "ubuntu_22_04", name: "Ubuntu 22.04 LTS", type: "os" },
   { id: "amazon_linux_2023", name: "Amazon Linux 2023", type: "os" },
@@ -46,7 +47,7 @@ const DEFAULT_BLUEPRINTS: LightsailBlueprint[] = [
 const DEFAULT_DUAL_STACK: LightsailBundle[] = [
   {
     id: "nano_3_0",
-    name: "$5.00/月 · 512 MB 内存 / 1 核 / 20 GB SSD / 1 TB 流量",
+    name: "$5.00/mo · 512 MB RAM / 1 vCPU / 20 GB SSD / 1 TB Transfer",
     price: 5.0,
     ramGb: 0.5,
     vCpu: 1,
@@ -55,7 +56,7 @@ const DEFAULT_DUAL_STACK: LightsailBundle[] = [
   },
   {
     id: "micro_3_0",
-    name: "$7.00/月 · 1 GB 内存 / 1 核 / 40 GB SSD / 2 TB 流量 (推荐)",
+    name: "$7.00/mo · 1 GB RAM / 1 vCPU / 40 GB SSD / 2 TB Transfer",
     price: 7.0,
     ramGb: 1.0,
     vCpu: 1,
@@ -64,7 +65,7 @@ const DEFAULT_DUAL_STACK: LightsailBundle[] = [
   },
   {
     id: "small_3_0",
-    name: "$12.00/月 · 2 GB 内存 / 1 核 / 60 GB SSD / 3 TB 流量 (畅销)",
+    name: "$12.00/mo · 2 GB RAM / 1 vCPU / 60 GB SSD / 3 TB Transfer",
     price: 12.0,
     ramGb: 2.0,
     vCpu: 1,
@@ -73,7 +74,7 @@ const DEFAULT_DUAL_STACK: LightsailBundle[] = [
   },
   {
     id: "medium_3_0",
-    name: "$24.00/月 · 4 GB 内存 / 2 核 / 80 GB SSD / 4 TB 流量",
+    name: "$24.00/mo · 4 GB RAM / 2 vCPU / 80 GB SSD / 4 TB Transfer",
     price: 24.0,
     ramGb: 4.0,
     vCpu: 2,
@@ -82,7 +83,7 @@ const DEFAULT_DUAL_STACK: LightsailBundle[] = [
   },
   {
     id: "large_3_0",
-    name: "$44.00/月 · 8 GB 内存 / 2 核 / 160 GB SSD / 5 TB 流量",
+    name: "$44.00/mo · 8 GB RAM / 2 vCPU / 160 GB SSD / 5 TB Transfer",
     price: 44.0,
     ramGb: 8.0,
     vCpu: 2,
@@ -91,7 +92,7 @@ const DEFAULT_DUAL_STACK: LightsailBundle[] = [
   },
   {
     id: "xlarge_3_0",
-    name: "$84.00/月 · 16 GB 内存 / 4 核 / 320 GB SSD / 6 TB 流量",
+    name: "$84.00/mo · 16 GB RAM / 4 vCPU / 320 GB SSD / 6 TB Transfer",
     price: 84.0,
     ramGb: 16.0,
     vCpu: 4,
@@ -103,7 +104,7 @@ const DEFAULT_DUAL_STACK: LightsailBundle[] = [
 const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
   {
     id: "nano_ipv6_3_0",
-    name: "$3.50/月 · 512 MB 内存 / 1 核 / 20 GB SSD / 1 TB 流量",
+    name: "$3.50/mo · 512 MB RAM / 1 vCPU / 20 GB SSD / 1 TB Transfer",
     price: 3.5,
     ramGb: 0.5,
     vCpu: 1,
@@ -112,7 +113,7 @@ const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
   },
   {
     id: "micro_ipv6_3_0",
-    name: "$5.00/月 · 1 GB 内存 / 1 核 / 40 GB SSD / 2 TB 流量 (推荐)",
+    name: "$5.00/mo · 1 GB RAM / 1 vCPU / 40 GB SSD / 2 TB Transfer",
     price: 5.0,
     ramGb: 1.0,
     vCpu: 1,
@@ -121,7 +122,7 @@ const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
   },
   {
     id: "small_ipv6_3_0",
-    name: "$10.00/月 · 2 GB 内存 / 1 核 / 60 GB SSD / 3 TB 流量 (畅销)",
+    name: "$10.00/mo · 2 GB RAM / 1 vCPU / 60 GB SSD / 3 TB Transfer",
     price: 10.0,
     ramGb: 2.0,
     vCpu: 1,
@@ -130,7 +131,7 @@ const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
   },
   {
     id: "medium_ipv6_3_0",
-    name: "$20.00/月 · 4 GB 内存 / 2 核 / 80 GB SSD / 4 TB 流量",
+    name: "$20.00/mo · 4 GB RAM / 2 vCPU / 80 GB SSD / 4 TB Transfer",
     price: 20.0,
     ramGb: 4.0,
     vCpu: 2,
@@ -139,7 +140,7 @@ const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
   },
   {
     id: "large_ipv6_3_0",
-    name: "$40.00/月 · 8 GB 内存 / 2 核 / 160 GB SSD / 5 TB 流量",
+    name: "$40.00/mo · 8 GB RAM / 2 vCPU / 160 GB SSD / 5 TB Transfer",
     price: 40.0,
     ramGb: 8.0,
     vCpu: 2,
@@ -148,7 +149,7 @@ const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
   },
   {
     id: "xlarge_ipv6_3_0",
-    name: "$80.00/月 · 16 GB 内存 / 4 核 / 320 GB SSD / 6 TB 流量",
+    name: "$80.00/mo · 16 GB RAM / 4 vCPU / 320 GB SSD / 6 TB Transfer",
     price: 80.0,
     ramGb: 16.0,
     vCpu: 4,
@@ -158,13 +159,13 @@ const DEFAULT_IPV6_ONLY: LightsailBundle[] = [
 ];
 
 const SNAPSHOT_HOURS = [
-  { value: "00:00", label: "00:00 UTC (北京时间 08:00)" },
-  { value: "02:00", label: "02:00 UTC (北京时间 10:00)" },
-  { value: "04:00", label: "04:00 UTC (北京时间 12:00)" },
-  { value: "08:00", label: "08:00 UTC (北京时间 16:00)" },
-  { value: "12:00", label: "12:00 UTC (北京时间 20:00)" },
-  { value: "16:00", label: "16:00 UTC (北京时间 00:00)" },
-  { value: "20:00", label: "20:00 UTC (北京时间 04:00)" },
+  { value: "00:00", label: "00:00 UTC (08:00 CST)" },
+  { value: "02:00", label: "02:00 UTC (10:00 CST)" },
+  { value: "04:00", label: "04:00 UTC (12:00 CST)" },
+  { value: "08:00", label: "08:00 UTC (16:00 CST)" },
+  { value: "12:00", label: "12:00 UTC (20:00 CST)" },
+  { value: "16:00", label: "16:00 UTC (00:00 CST)" },
+  { value: "20:00", label: "20:00 UTC (04:00 CST)" },
 ];
 
 interface CreateLightsailModalProps {
@@ -184,6 +185,7 @@ export function CreateLightsailModal({
   onSuccess,
   formatZone,
 }: CreateLightsailModalProps) {
+  const { t } = useTranslation();
   const defaultRegion = cleanAwsRegion(account.region);
   const [instanceName, setInstanceName] = useState("");
   const [zone, setZone] = useState(`${defaultRegion}a`);
@@ -292,7 +294,7 @@ export function CreateLightsailModal({
     if (snip) {
       setUserData(snip.content);
       setShowUserData(true);
-      toast.success(`已载入代码片段: ${snip.name}`);
+      toast.success(t("lightsail.snippetLoaded", { name: snip.name }));
     }
   }
 
@@ -300,13 +302,13 @@ export function CreateLightsailModal({
     e.preventDefault();
     const name = instanceName.trim();
     if (!name) {
-      toast.error("请输入实例名称");
+      toast.error(t("lightsail.nameRequired"));
       return;
     }
 
     setLoading(true);
     try {
-      toast.info(`正在通过 AWS Lightsail API 创建实例 ${name}...`);
+      toast.info(t("lightsail.creatingToast", { name }));
       await api.createLightsail(account.id, {
         instanceName: name,
         region: defaultRegion,
@@ -318,11 +320,11 @@ export function CreateLightsailModal({
         userData: userData.trim() || undefined,
       });
 
-      toast.success(`🎉 光帆实例 ${name} 创建成功！正在同步主机...`);
+      toast.success(t("lightsail.createdToast", { name }));
       onSuccess();
       onClose();
     } catch (err: unknown) {
-      toast.error(errorMessage(err) || "创建光帆实例失败");
+      toast.error(errorMessage(err) || t("lightsail.createFailed"));
     } finally {
       setLoading(false);
     }
@@ -333,47 +335,34 @@ export function CreateLightsailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-[800px] max-h-[92vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-1">
-          <DialogTitle className="flex items-center gap-2 text-base">
+          <DialogTitle className="flex items-center gap-2 text-base font-semibold">
             <Zap className="size-4.5 text-amber-500" />
-            创建 AWS Lightsail 光帆服务器
+            {t("lightsail.createTitle")}
           </DialogTitle>
-          <DialogDescription className="text-xs">
-            调用 AWS Lightsail 接口开机，开机完成后将自动同步并导入到 Termix。
+          <DialogDescription className="text-xs text-muted-foreground">
+            {t("lightsail.createDesc")}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleCreate} className="space-y-3 py-1 text-xs">
-          {/* 实例名称 */}
-          <div className="space-y-1">
-            <label className="text-[11px] font-medium text-foreground">
-              实例名称 (Instance Name)
-            </label>
-            <Input
-              value={instanceName}
-              onChange={(e) => setInstanceName(e.target.value)}
-              placeholder="e.g. debian-prod-01"
-              required
-              className="h-7 w-full text-xs font-mono px-2.5 py-0.5"
-            />
-          </div>
-
-          {/* 所在可用区 与 系统镜像 在同一行 */}
+          {/* 1. 可用区 与 系统镜像 (双列响应式) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {/* 所在可用区 */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground flex items-center justify-between">
-                <span>所在可用区 (Availability Zone)</span>
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
+                <span>{t("lightsail.zone")}</span>
                 {plansLoading && (
-                  <span className="text-muted-foreground text-[10px] flex items-center gap-1">
-                    <Loader2 className="size-2.5 animate-spin" /> 加载中...
+                  <span className="text-muted-foreground text-[10px] flex items-center gap-1 font-normal">
+                    <Loader2 className="size-2.5 animate-spin" />{" "}
+                    {t("lightsail.zoneLoading")}
                   </span>
                 )}
               </label>
               <Select value={zone} onValueChange={setZone}>
-                <SelectTrigger size="sm" className="h-7 w-full text-xs px-2.5">
-                  <SelectValue placeholder="选择可用区" />
+                <SelectTrigger size="sm" className="h-8 w-full text-xs px-2.5">
+                  <SelectValue placeholder={t("lightsail.zonePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
                   {zones.map((z) => (
@@ -386,13 +375,15 @@ export function CreateLightsailModal({
             </div>
 
             {/* 系统镜像 */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground">
-                系统镜像 (Blueprint / OS)
+            <div className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold text-foreground">
+                {t("lightsail.blueprint")}
               </label>
               <Select value={blueprintId} onValueChange={setBlueprintId}>
-                <SelectTrigger size="sm" className="h-7 w-full text-xs px-2.5">
-                  <SelectValue placeholder="选择系统镜像" />
+                <SelectTrigger size="sm" className="h-8 w-full text-xs px-2.5">
+                  <SelectValue
+                    placeholder={t("lightsail.blueprintPlaceholder")}
+                  />
                 </SelectTrigger>
                 <SelectContent>
                   {blueprints.map((b) => (
@@ -405,20 +396,20 @@ export function CreateLightsailModal({
             </div>
           </div>
 
-          {/* 网络类型 与 套餐规格 在同一行 */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            {/* 网络类型：紧凑切换控制 */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground flex items-center gap-1.5">
+          {/* 2. 网络类型与套餐规格配置 */}
+          <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+            {/* 网络类型切换 */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
                 <Network className="size-3 text-primary" />
-                <span>网络类型 (Networking Type)</span>
-              </label>
-              <div className="grid grid-cols-2 p-0.5 rounded-md bg-muted/50 border border-border/60 h-7 items-center">
+                {t("lightsail.networkType")}
+              </span>
+              <div className="inline-flex p-0.5 rounded-md bg-muted/60 border border-border/60 h-7 items-center">
                 <button
                   type="button"
                   onClick={() => handleNetworkTypeChange("dual_stack")}
                   className={cn(
-                    "h-6 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
+                    "h-6 px-2.5 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
                     networkType === "dual_stack"
                       ? "bg-background text-foreground shadow-xs font-semibold"
                       : "text-muted-foreground hover:text-foreground",
@@ -427,14 +418,13 @@ export function CreateLightsailModal({
                   {networkType === "dual_stack" && (
                     <Check className="size-3 text-primary shrink-0" />
                   )}
-                  <span>双栈 (IPv4 + IPv6)</span>
+                  <span>{t("lightsail.dualStack")}</span>
                 </button>
-
                 <button
                   type="button"
                   onClick={() => handleNetworkTypeChange("ipv6_only")}
                   className={cn(
-                    "h-6 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
+                    "h-6 px-2.5 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
                     networkType === "ipv6_only"
                       ? "bg-background text-foreground shadow-xs font-semibold"
                       : "text-muted-foreground hover:text-foreground",
@@ -443,27 +433,29 @@ export function CreateLightsailModal({
                   {networkType === "ipv6_only" && (
                     <Check className="size-3 text-primary shrink-0" />
                   )}
-                  <span>纯 IPv6 ($3.5/月起)</span>
+                  <span>{t("lightsail.ipv6Only")}</span>
                 </button>
               </div>
             </div>
 
-            {/* 套餐规格下拉框 */}
-            <div className="space-y-1">
-              <label className="text-[11px] font-medium text-foreground flex items-center justify-between">
+            {/* 套餐规格 (全宽，拥有充足宽度展示完整价格与配置) */}
+            <div className="flex flex-col gap-1 pt-0.5">
+              <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
                 <span>
-                  {networkType === "dual_stack" ? "双栈" : "纯 IPv6"} 套餐规格
-                  (Bundle)
+                  {networkType === "dual_stack"
+                    ? t("lightsail.bundleDualStack")
+                    : t("lightsail.bundleIpv6Only")}
                 </span>
                 {plansLoading && (
-                  <span className="text-muted-foreground text-[10px] flex items-center gap-1">
-                    <Loader2 className="size-2.5 animate-spin" /> 同步中...
+                  <span className="text-muted-foreground text-[10px] flex items-center gap-1 font-normal">
+                    <Loader2 className="size-2.5 animate-spin" />{" "}
+                    {t("lightsail.bundleLoading")}
                   </span>
                 )}
               </label>
               <Select value={bundleId} onValueChange={setBundleId}>
-                <SelectTrigger size="sm" className="h-7 w-full text-xs px-2.5">
-                  <SelectValue placeholder="选择套餐规格" />
+                <SelectTrigger size="sm" className="h-8 w-full text-xs px-2.5">
+                  <SelectValue placeholder={t("lightsail.bundlePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>
                   {currentBundles.map((b) => (
@@ -476,8 +468,22 @@ export function CreateLightsailModal({
             </div>
           </div>
 
-          {/* 自动快照与初始化脚本 */}
-          <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-2">
+          {/* 3. 实例名称 */}
+          <div className="flex flex-col gap-1">
+            <label className="text-[11px] font-semibold text-foreground">
+              {t("lightsail.instanceName")}
+            </label>
+            <Input
+              value={instanceName}
+              onChange={(e) => setInstanceName(e.target.value)}
+              placeholder={t("lightsail.instanceNamePlaceholder")}
+              required
+              className="h-8 w-full text-xs font-mono px-2.5"
+            />
+          </div>
+
+          {/* 4. 自动快照与初始化脚本 */}
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2">
             {/* 自动快照配置 */}
             <div className="flex items-center justify-between gap-2">
               <label className="flex items-center gap-2 cursor-pointer select-none">
@@ -487,23 +493,25 @@ export function CreateLightsailModal({
                     setEnableAutoSnapshot(Boolean(checked))
                   }
                 />
-                <span className="font-medium text-foreground text-[11px] flex items-center gap-1">
-                  <Camera className="size-3 text-muted-foreground" />
-                  启用每日自动快照 (Automatic Snapshots)
+                <span className="font-semibold text-foreground text-[11px] flex items-center gap-1.5">
+                  <Camera className="size-3.5 text-muted-foreground" />
+                  {t("lightsail.autoSnapshot")}
                 </span>
               </label>
 
               {enableAutoSnapshot && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    执行时间:
+                    {t("lightsail.snapshotTime")}
                   </span>
                   <Select value={snapshotTime} onValueChange={setSnapshotTime}>
                     <SelectTrigger
                       size="sm"
                       className="h-6 w-[170px] text-[10px] px-2"
                     >
-                      <SelectValue placeholder="选择快照时间" />
+                      <SelectValue
+                        placeholder={t("lightsail.snapshotTimePlaceholder")}
+                      />
                     </SelectTrigger>
                     <SelectContent>
                       {SNAPSHOT_HOURS.map((h) => (
@@ -529,19 +537,21 @@ export function CreateLightsailModal({
                 <button
                   type="button"
                   onClick={() => setShowUserData(!showUserData)}
-                  className="text-[11px] font-medium text-foreground hover:text-primary flex items-center gap-1 cursor-pointer select-none"
+                  className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1.5 cursor-pointer select-none"
                 >
-                  <FileCode className="size-3 text-muted-foreground" />
+                  <FileCode className="size-3.5 text-muted-foreground" />
                   <span>
-                    {showUserData ? "收起" : "展开"} 启动脚本 (Cloud-init User
-                    Data - 选填)
+                    {showUserData
+                      ? t("lightsail.collapseScript")
+                      : t("lightsail.expandScript")}{" "}
+                    {t("lightsail.launchScript")}
                   </span>
                 </button>
 
                 {snippets.length > 0 && (
                   <div className="flex items-center gap-1.5 shrink-0">
                     <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      代码片段:
+                      {t("lightsail.snippet")}
                     </span>
                     <Select
                       value={selectedSnippetId}
@@ -551,7 +561,9 @@ export function CreateLightsailModal({
                         size="sm"
                         className="h-6 text-[10px] px-2 w-[160px]"
                       >
-                        <SelectValue placeholder="选择 Termix 片段..." />
+                        <SelectValue
+                          placeholder={t("lightsail.snippetPlaceholder")}
+                        />
                       </SelectTrigger>
                       <SelectContent>
                         {snippets.map((s) => (
@@ -570,16 +582,15 @@ export function CreateLightsailModal({
               </div>
 
               {showUserData && (
-                <div className="space-y-1 pt-2">
+                <div className="space-y-1 pt-1.5">
                   <Textarea
                     value={userData}
                     onChange={(e) => setUserData(e.target.value)}
-                    placeholder="#!/bin/bash&#10;# 服务器首次开机自动执行的脚本&#10;apt update -y"
+                    placeholder={t("lightsail.scriptPlaceholder")}
                     className="h-20 w-full text-[11px] font-mono resize-none py-1.5 px-2"
                   />
                   <p className="text-[10px] text-muted-foreground">
-                    支持 Shell 脚本或 cloud-init 配置文件，首次开机自动以 root
-                    权限执行。
+                    {t("lightsail.scriptHint")}
                   </p>
                 </div>
               )}
@@ -593,25 +604,25 @@ export function CreateLightsailModal({
               size="sm"
               onClick={onClose}
               disabled={loading}
-              className="h-7 text-xs px-3"
+              className="h-8 text-xs px-3"
             >
-              取消
+              {t("lightsail.cancel")}
             </Button>
             <Button
               type="submit"
               size="sm"
               disabled={loading}
-              className="h-7 text-xs px-3 gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
+              className="h-8 text-xs px-3 gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
             >
               {loading ? (
                 <>
-                  <Loader2 className="size-3 animate-spin" />
-                  正在开机...
+                  <Loader2 className="size-3.5 animate-spin" />
+                  {t("lightsail.creating")}
                 </>
               ) : (
                 <>
-                  <Zap className="size-3" />
-                  立即创建
+                  <Zap className="size-3.5" />
+                  {t("lightsail.create")}
                 </>
               )}
             </Button>

@@ -50,6 +50,19 @@ const cloud = fakeFetch((url, init) => {
         publicKeyBase64: Buffer.from("LS-PUB-KEY").toString("base64"),
       });
     }
+    if (target === "Lightsail_20161128.GetInstancePortStates") {
+      return json({
+        portStates: [
+          {
+            fromPort: 22,
+            toPort: 22,
+            protocol: "tcp",
+            state: "open",
+            cidrs: ["0.0.0.0/0"],
+          },
+        ],
+      });
+    }
   }
   if (url.host !== "api.digitalocean.com") return undefined;
   if (denied) return status(401, "denied");
@@ -496,6 +509,52 @@ describe("sync", () => {
     );
     expect(autoCred).toBeDefined();
     expect(lsHost.credentialId).toBe(autoCred!.id);
+  });
+
+  it("caches Lightsail port rules in the database and skips live fetch unless refresh=true", async () => {
+    const id = await addAccount({
+      provider: "aws",
+      name: "aws-test-rules",
+      credentials: {
+        accessKeyId: "AKIAIOSFODNN7EXAMPLE",
+        secretAccessKey: "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+        service: "lightsail",
+      },
+    });
+
+    const callsBefore = cloud.calls.length;
+    // 1. First call: fetches live from AWS and caches in DB
+    const res1 = await fetch(
+      `http://127.0.0.1:${port}/accounts/${id}/instances/rules?instanceId=lightsail/us-east-1/lightsail-vm`,
+      { headers: { authorization: "Bearer user-1" } },
+    );
+    expect(res1.status).toBe(200);
+    const body1 = (await res1.json()) as { rules: any[]; cached: boolean };
+    expect(body1.cached).toBe(false);
+    expect(body1.rules).toHaveLength(1);
+    expect(cloud.calls.length).toBeGreaterThan(callsBefore);
+
+    const callsAfterFirst = cloud.calls.length;
+    // 2. Second call: reads from DB cache, does NOT call cloud API
+    const res2 = await fetch(
+      `http://127.0.0.1:${port}/accounts/${id}/instances/rules?instanceId=lightsail/us-east-1/lightsail-vm`,
+      { headers: { authorization: "Bearer user-1" } },
+    );
+    expect(res2.status).toBe(200);
+    const body2 = (await res2.json()) as { rules: any[]; cached: boolean };
+    expect(body2.cached).toBe(true);
+    expect(body2.rules).toEqual(body1.rules);
+    expect(cloud.calls.length).toBe(callsAfterFirst); // No new network call!
+
+    // 3. Third call with refresh=true: forces live fetch from AWS
+    const res3 = await fetch(
+      `http://127.0.0.1:${port}/accounts/${id}/instances/rules?instanceId=lightsail/us-east-1/lightsail-vm&refresh=true`,
+      { headers: { authorization: "Bearer user-1" } },
+    );
+    expect(res3.status).toBe(200);
+    const body3 = (await res3.json()) as { rules: any[]; cached: boolean };
+    expect(body3.cached).toBe(false);
+    expect(cloud.calls.length).toBe(callsAfterFirst + 1); // Live fetch made!
   });
 });
 

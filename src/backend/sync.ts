@@ -372,7 +372,13 @@ export function createSync(
               await ctx.hosts.update(existing.hostId, patch as any);
               await client
                 .update(stores.instances)
-                .set({ signature, state: instance.state })
+                .set({
+                  signature,
+                  state: instance.state,
+                  ...(instance.details
+                    ? { details: JSON.stringify(instance.details) }
+                    : {}),
+                })
                 .where(eq(stores.instances.id, existing.id));
               report.updated += 1;
               continue;
@@ -396,6 +402,9 @@ export function createSync(
                 input.port,
               ]),
               state: instance.state,
+              details: instance.details
+                ? JSON.stringify(instance.details)
+                : null,
             });
             report.created += 1;
           } catch (error) {

@@ -75,5 +75,33 @@ export const instances = defineTable(
   },
 );
 
+// p_cc_cloud_providers_instance_cache: caches server details and firewall rules
+// in the database so opening server details is instant without repeated cloud API calls.
+export const instanceCache = defineTable(
+  "instance_cache",
+  {
+    id: id(),
+    accountId: integer().notNull(),
+    instanceId: varchar(255).notNull(),
+    details: text(),
+    portRules: text(),
+    updatedAt: timestamp().notNull().defaultNow(),
+  },
+  {
+    uniques: [
+      {
+        name: "uq_p_cc_cloud_providers_instance_cache_acc_inst",
+        columns: ["accountId", "instanceId"],
+      },
+    ],
+    indexes: [
+      {
+        name: "idx_p_cc_cloud_providers_instance_cache_acc",
+        columns: ["accountId"],
+      },
+    ],
+  },
+);
+
 // termix-plugin migrations reads this list.
-export const tables = [accounts, instances];
+export const tables = [accounts, instances, instanceCache];

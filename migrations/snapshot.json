@@ -133,6 +133,51 @@
           ]
         }
       ]
+    },
+    "instance_cache": {
+      "columns": {
+        "id": {
+          "type": "id",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "accountId": {
+          "type": "integer",
+          "notNull": true
+        },
+        "instanceId": {
+          "type": "varchar",
+          "length": 255,
+          "notNull": true
+        },
+        "details": {
+          "type": "text"
+        },
+        "portRules": {
+          "type": "text"
+        },
+        "updatedAt": {
+          "type": "timestamp",
+          "notNull": true,
+          "defaultNow": true
+        }
+      },
+      "indexes": [
+        {
+          "name": "uq_p_cc_cloud_providers_instance_cache_acc_inst",
+          "columns": [
+            "accountId",
+            "instanceId"
+          ],
+          "unique": true
+        },
+        {
+          "name": "idx_p_cc_cloud_providers_instance_cache_acc",
+          "columns": [
+            "accountId"
+          ]
+        }
+      ]
     }
   }
 }

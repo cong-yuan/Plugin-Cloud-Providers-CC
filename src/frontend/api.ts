@@ -223,12 +223,12 @@ export function createApi(api: PluginApiClient) {
           { instanceId, port },
         ),
       ),
-    getInstanceRules: (id: number, instanceId: string) =>
+    getInstanceRules: (id: number, instanceId: string, refresh = false) =>
       data(
-        api.get<{ rules: PortRule[] }>(
-          `/accounts/${id}/instances/rules?instanceId=${encodeURIComponent(instanceId)}`,
+        api.get<{ rules: PortRule[]; cached?: boolean }>(
+          `/accounts/${id}/instances/rules?instanceId=${encodeURIComponent(instanceId)}${refresh ? "&refresh=true" : ""}`,
         ),
-      ).then((r) => r.rules),
+      ),
     openInstanceRule: (
       id: number,
       rule: {

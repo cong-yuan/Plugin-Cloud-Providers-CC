@@ -445,6 +445,7 @@ function CloudTab({ isVisible }: TabProps) {
   const [instanceRules, setInstanceRules] = useState<
     Record<string, PortRule[]>
   >({});
+  const [rulesCached, setRulesCached] = useState<Record<string, boolean>>({});
   const [loadingRules, setLoadingRules] = useState<Record<string, boolean>>({});
   const [addingRuleInstanceId, setAddingRuleInstanceId] = useState<
     string | null
@@ -464,26 +465,31 @@ function CloudTab({ isVisible }: TabProps) {
   ): string | null {
     const proto = protocol.toLowerCase();
     if (proto === "tcp") {
-      if (fromPort === 22 && toPort === 22) return "SSH (远程连接)";
+      if (fromPort === 22 && toPort === 22) return "SSH";
       if (fromPort === 80 && toPort === 80) return "HTTP (Web)";
-      if (fromPort === 443 && toPort === 443) return "HTTPS (Web 安全)";
+      if (fromPort === 443 && toPort === 443) return "HTTPS (Web SSL)";
       if (fromPort === 3306 && toPort === 3306) return "MySQL";
       if (fromPort === 5432 && toPort === 5432) return "PostgreSQL";
       if (fromPort === 6379 && toPort === 6379) return "Redis";
       if (fromPort === 8080 && toPort === 8080) return "HTTP-Alt (8080)";
       if (fromPort === 3000 && toPort === 3000) return "Web App (3000)";
-      if (fromPort === 8888 && toPort === 8888) return "宝塔 / 面板 (8888)";
+      if (fromPort === 8888 && toPort === 8888) return "Panel (8888)";
     }
     if (proto === "icmp") return "Ping (ICMP)";
-    if (fromPort === 0 && toPort === 65535) return "全部端口开放";
+    if (fromPort === 0 && toPort === 65535) return t("serverDetails.allPorts");
     return null;
   }
 
-  async function loadRules(accountId: number, instanceId: string) {
+  async function loadRules(
+    accountId: number,
+    instanceId: string,
+    refresh = false,
+  ) {
     setLoadingRules((prev) => ({ ...prev, [instanceId]: true }));
     try {
-      const rules = await api.getInstanceRules(accountId, instanceId);
-      setInstanceRules((prev) => ({ ...prev, [instanceId]: rules }));
+      const res = await api.getInstanceRules(accountId, instanceId, refresh);
+      setInstanceRules((prev) => ({ ...prev, [instanceId]: res.rules }));
+      setRulesCached((prev) => ({ ...prev, [instanceId]: !!res.cached }));
     } catch (err) {
       console.error("Failed to load instance rules:", err);
     } finally {
@@ -494,12 +500,12 @@ function CloudTab({ isVisible }: TabProps) {
   async function handleAddRule(account: Account, instance: Instance) {
     const from = parseInt(newRuleFromPort);
     if (isNaN(from) || from < 0 || from > 65535) {
-      toast.error("请输入有效的起始端口号 (0-65535)");
+      toast.error(t("serverDetails.portRequired"));
       return;
     }
     const to = newRuleToPort ? parseInt(newRuleToPort) : from;
     if (isNaN(to) || to < from || to > 65535) {
-      toast.error("结束端口号必须大于等于起始端口号 (0-65535)");
+      toast.error(t("serverDetails.portRangeInvalid"));
       return;
     }
 
@@ -513,14 +519,13 @@ function CloudTab({ isVisible }: TabProps) {
         protocol: newRuleProtocol,
         cidrs: newRuleCidr.trim() ? [newRuleCidr.trim()] : ["0.0.0.0/0"],
       });
-      toast.success(
-        `成功开放端口规则 ${newRuleProtocol.toUpperCase()} ${from === to ? from : `${from}-${to}`}`,
-      );
+      const ruleDisplay = `${newRuleProtocol.toUpperCase()} ${from === to ? from : `${from}-${to}`}`;
+      toast.success(t("serverDetails.ruleAdded", { rule: ruleDisplay }));
       setAddingRuleInstanceId(null);
       setNewRuleFromPort("");
       setNewRuleToPort("");
       setNewRuleCidr("");
-      await loadRules(account.id, instance.id);
+      await loadRules(account.id, instance.id, false);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -544,8 +549,8 @@ function CloudTab({ isVisible }: TabProps) {
         protocol: rule.protocol,
         cidrs: rule.cidrs,
       });
-      toast.success(`已删除端口规则 ${ruleDisplay}`);
-      await loadRules(account.id, instance.id);
+      toast.success(t("serverDetails.ruleDeleted", { rule: ruleDisplay }));
+      await loadRules(account.id, instance.id, false);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
@@ -914,7 +919,7 @@ function CloudTab({ isVisible }: TabProps) {
                       onClick={() => setLightsailAccount(account)}
                     >
                       <Zap className="size-3 text-amber-500" />
-                      创建光帆
+                      {t("lightsail.createButton")}
                     </Button>
                   )}
                   <ListRowAction
@@ -1118,8 +1123,8 @@ function CloudTab({ isVisible }: TabProps) {
                               <ListRowAction
                                 label={
                                   expandedDetailIds.has(instance.id)
-                                    ? "收起详情"
-                                    : "服务器详情"
+                                    ? t("serverDetails.collapse")
+                                    : t("serverDetails.details")
                                 }
                                 onClick={() => toggleDetail(instance, account)}
                               >
@@ -1132,7 +1137,7 @@ function CloudTab({ isVisible }: TabProps) {
                                 />
                               </ListRowAction>
                               <ListRowAction
-                                label="连接"
+                                label={t("serverDetails.connect")}
                                 tone="brand"
                                 disabled={importingId === instance.id}
                                 onClick={() =>
@@ -1148,11 +1153,13 @@ function CloudTab({ isVisible }: TabProps) {
                                 <Folder />
                               </ListRowAction>
                               <ListRowAction
-                                label="复制 IP"
+                                label={t("serverDetails.copyIp")}
                                 onClick={() => {
                                   if (ip && ip !== "无公网 IP") {
                                     void navigator.clipboard.writeText(ip);
-                                    toast.success(`已复制 IP: ${ip}`);
+                                    toast.success(
+                                      `${t("serverDetails.copied")}: ${ip}`,
+                                    );
                                   }
                                 }}
                               >
@@ -1160,7 +1167,7 @@ function CloudTab({ isVisible }: TabProps) {
                               </ListRowAction>
                               {!instance.imported && (
                                 <ListRowAction
-                                  label="导入为主机"
+                                  label={t("discover.import", { count: 1 })}
                                   disabled={importingId === instance.id}
                                   onClick={() =>
                                     void handleImportOnly(account, instance)
@@ -1182,7 +1189,7 @@ function CloudTab({ isVisible }: TabProps) {
                                 </span>
                                 <ListBadge tone={tagTone}>{tagLabel}</ListBadge>
                                 <span className="text-[11px] text-muted-foreground">
-                                  状态:{" "}
+                                  {t("serverDetails.status")}:{" "}
                                   <span
                                     className={
                                       isRunning
@@ -1191,34 +1198,37 @@ function CloudTab({ isVisible }: TabProps) {
                                     }
                                   >
                                     {isRunning
-                                      ? "运行中"
-                                      : instance.state || "已停止"}
+                                      ? t("state.running")
+                                      : instance.state || t("state.stopped")}
                                   </span>
                                 </span>
                               </div>
                               <div className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
-                                <span>可用区:</span>
+                                <span>{t("lightsail.zone")}:</span>
                                 <code className="text-foreground font-mono bg-muted px-1.5 py-0.5 rounded border border-border/40">
                                   {formatAwsZone(displayZone) ||
                                     displayZone ||
-                                    "未知"}
+                                    t("state.other")}
                                 </code>
                               </div>
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                              {/* 1. SSH 登录配置 */}
+                              {/* 1. SSH 配置 */}
                               <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
                                 <div className="font-medium text-foreground flex items-center justify-between">
                                   <span className="flex items-center gap-1.5">
                                     <Terminal className="size-3 text-muted-foreground" />
-                                    SSH 登录配置
+                                    SSH
                                   </span>
                                 </div>
                                 <div className="space-y-1.5 text-[11px]">
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
-                                      SSH 端口:
+                                      {t("fields.port", {
+                                        defaultValue: "Port",
+                                      })}
+                                      :
                                     </span>
                                     <code className="font-mono text-foreground font-semibold">
                                       {instance.port || 22}
@@ -1226,7 +1236,7 @@ function CloudTab({ isVisible }: TabProps) {
                                   </div>
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
-                                      登录用户:
+                                      {t("fields.username")}:
                                     </span>
                                     <code className="font-mono text-foreground">
                                       {instance.user ||
@@ -1237,7 +1247,7 @@ function CloudTab({ isVisible }: TabProps) {
                                   {instance.keyName && (
                                     <div className="flex items-center justify-between">
                                       <span className="text-muted-foreground">
-                                        SSH 密钥对:
+                                        {t("fields.privateKey")}:
                                       </span>
                                       <span
                                         className="font-mono text-foreground truncate max-w-[130px]"
@@ -1254,18 +1264,18 @@ function CloudTab({ isVisible }: TabProps) {
                               <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
                                 <div className="font-medium text-foreground flex items-center gap-1.5">
                                   <Wifi className="size-3 text-muted-foreground" />
-                                  网络与 IP
+                                  {t("serverDetails.network")}
                                 </div>
                                 <div className="space-y-1.5 text-[11px]">
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
-                                      公网 IP:
+                                      {t("serverDetails.publicIpv4")}:
                                     </span>
                                     <div className="flex items-center gap-1">
                                       <code className="font-mono text-foreground">
                                         {instance.publicIp ||
                                           instance.address ||
-                                          "无"}
+                                          "-"}
                                       </code>
                                       {(instance.publicIp ||
                                         instance.address) && (
@@ -1277,10 +1287,12 @@ function CloudTab({ isVisible }: TabProps) {
                                                 instance.address ||
                                                 "",
                                             );
-                                            toast.success("已复制公网 IP");
+                                            toast.success(
+                                              t("serverDetails.copied"),
+                                            );
                                           }}
                                           className="hover:text-primary text-muted-foreground"
-                                          title="复制 IP"
+                                          title={t("serverDetails.copyIp")}
                                         >
                                           <Copy className="size-2.5" />
                                         </button>
@@ -1289,16 +1301,16 @@ function CloudTab({ isVisible }: TabProps) {
                                   </div>
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
-                                      私网 IP:
+                                      {t("serverDetails.privateIp")}:
                                     </span>
                                     <code className="font-mono text-foreground">
-                                      {instance.privateIp || "无"}
+                                      {instance.privateIp || "-"}
                                     </code>
                                   </div>
                                   {instance.network && (
                                     <div className="flex items-center justify-between">
                                       <span className="text-muted-foreground">
-                                        流量 / 带宽:
+                                        {t("serverDetails.traffic")}:
                                       </span>
                                       <span className="font-mono text-foreground">
                                         {instance.network.label}
@@ -1312,12 +1324,12 @@ function CloudTab({ isVisible }: TabProps) {
                               <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
                                 <div className="font-medium text-foreground flex items-center gap-1.5">
                                   <Cpu className="size-3 text-muted-foreground" />
-                                  规格与系统
+                                  {t("serverDetails.hardware")}
                                 </div>
                                 <div className="space-y-1.5 text-[11px]">
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
-                                      系统镜像:
+                                      {t("lightsail.blueprint")}:
                                     </span>
                                     <span
                                       className="text-foreground font-medium truncate max-w-[140px]"
@@ -1335,20 +1347,20 @@ function CloudTab({ isVisible }: TabProps) {
                                   </div>
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
-                                      硬件规格:
+                                      {t("serverDetails.hardware")}:
                                     </span>
                                     <span className="font-mono text-foreground">
                                       {spec ? `${spec} · ` : ""}
                                       {instance.details?.cpuCount
-                                        ? `${instance.details.cpuCount} 核 / ${instance.details.ramSizeGb} GB`
+                                        ? `${instance.details.cpuCount} vCPU / ${instance.details.ramSizeGb} GB`
                                         : instance.details?.bundleId ||
-                                          "标准套餐"}
+                                          t("lightsail.bundle")}
                                     </span>
                                   </div>
                                   {instance.details?.diskSizeGb && (
                                     <div className="flex items-center justify-between">
                                       <span className="text-muted-foreground">
-                                        系统盘:
+                                        {t("serverDetails.disk")}:
                                       </span>
                                       <span className="font-mono text-foreground">
                                         {instance.details.diskSizeGb} GB SSD
@@ -1359,19 +1371,23 @@ function CloudTab({ isVisible }: TabProps) {
                               </div>
                             </div>
 
-                            {/* 4. 防火墙端口规则 (Lightsail / Cloud Firewall Rules) */}
+                            {/* 4. 防火墙端口规则 (支持数据库本地秒级缓存 + 强制刷新) */}
                             {(isLightsail || account.provider === "aws") && (
                               <div className="p-3 rounded-lg bg-background/80 border border-border/40 space-y-2.5">
                                 <div className="flex items-center justify-between">
                                   <div className="flex items-center gap-2">
                                     <Shield className="size-3.5 text-primary" />
                                     <span className="font-semibold text-foreground text-xs">
-                                      防火墙端口规则 (Firewall Rules)
+                                      {t("serverDetails.firewall")}
                                     </span>
                                     {instanceRules[instance.id] && (
                                       <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
-                                        {instanceRules[instance.id].length}{" "}
-                                        条规则
+                                        {instanceRules[instance.id].length}
+                                      </span>
+                                    )}
+                                    {rulesCached[instance.id] && (
+                                      <span className="text-[10px] bg-muted/80 text-muted-foreground px-1.5 py-0.5 rounded border border-border/40">
+                                        {t("serverDetails.cachedBadge")}
                                       </span>
                                     )}
                                   </div>
@@ -1380,9 +1396,13 @@ function CloudTab({ isVisible }: TabProps) {
                                       size="xs"
                                       variant="ghost"
                                       className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                                      title="刷新规则"
+                                      title={t("serverDetails.refreshRules")}
                                       onClick={() =>
-                                        void loadRules(account.id, instance.id)
+                                        void loadRules(
+                                          account.id,
+                                          instance.id,
+                                          true,
+                                        )
                                       }
                                       disabled={loadingRules[instance.id]}
                                     >
@@ -1414,8 +1434,8 @@ function CloudTab({ isVisible }: TabProps) {
                                     >
                                       <Plus className="size-3" />
                                       {addingRuleInstanceId === instance.id
-                                        ? "取消"
-                                        : "添加端口规则"}
+                                        ? t("serverDetails.cancel")
+                                        : t("serverDetails.addRule")}
                                     </Button>
                                   </div>
                                 </div>
@@ -1424,12 +1444,12 @@ function CloudTab({ isVisible }: TabProps) {
                                 {addingRuleInstanceId === instance.id && (
                                   <div className="p-2.5 rounded bg-muted/40 border border-border/60 space-y-2 animate-in fade-in-50 duration-150">
                                     <div className="text-[11px] font-medium text-foreground">
-                                      新增公网开放端口
+                                      {t("serverDetails.addRule")}
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2 text-xs">
                                       <div className="flex items-center gap-1">
                                         <span className="text-[11px] text-muted-foreground">
-                                          协议:
+                                          {t("serverDetails.protocol")}:
                                         </span>
                                         <select
                                           value={newRuleProtocol}
@@ -1440,9 +1460,7 @@ function CloudTab({ isVisible }: TabProps) {
                                         >
                                           <option value="tcp">TCP</option>
                                           <option value="udp">UDP</option>
-                                          <option value="all">
-                                            ALL (全部)
-                                          </option>
+                                          <option value="all">ALL</option>
                                           <option value="icmp">
                                             ICMP (Ping)
                                           </option>
@@ -1451,18 +1469,18 @@ function CloudTab({ isVisible }: TabProps) {
 
                                       <div className="flex items-center gap-1">
                                         <span className="text-[11px] text-muted-foreground">
-                                          端口:
+                                          {t("serverDetails.portRange")}:
                                         </span>
                                         <input
                                           type="number"
                                           min="0"
                                           max="65535"
-                                          placeholder="起始端口 (如 80)"
+                                          placeholder="80"
                                           value={newRuleFromPort}
                                           onChange={(e) =>
                                             setNewRuleFromPort(e.target.value)
                                           }
-                                          className="w-24 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                          className="w-20 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                                         />
                                         <span className="text-muted-foreground">
                                           -
@@ -1471,27 +1489,27 @@ function CloudTab({ isVisible }: TabProps) {
                                           type="number"
                                           min="0"
                                           max="65535"
-                                          placeholder="结束端口 (可选)"
+                                          placeholder="80"
                                           value={newRuleToPort}
                                           onChange={(e) =>
                                             setNewRuleToPort(e.target.value)
                                           }
-                                          className="w-24 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                          className="w-20 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                                         />
                                       </div>
 
                                       <div className="flex items-center gap-1">
                                         <span className="text-[11px] text-muted-foreground">
-                                          来源:
+                                          CIDR:
                                         </span>
                                         <input
                                           type="text"
-                                          placeholder="默认 0.0.0.0/0 (任意 IP)"
+                                          placeholder="0.0.0.0/0"
                                           value={newRuleCidr}
                                           onChange={(e) =>
                                             setNewRuleCidr(e.target.value)
                                           }
-                                          className="w-36 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                          className="w-32 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
                                         />
                                       </div>
 
@@ -1509,10 +1527,10 @@ function CloudTab({ isVisible }: TabProps) {
                                         {ruleOperating[`${instance.id}-add`] ? (
                                           <>
                                             <Loader2 className="size-3 animate-spin" />
-                                            正在开放...
+                                            ...
                                           </>
                                         ) : (
-                                          "确认开放"
+                                          t("serverDetails.add")
                                         )}
                                       </Button>
                                     </div>
@@ -1524,12 +1542,12 @@ function CloudTab({ isVisible }: TabProps) {
                                 !instanceRules[instance.id] ? (
                                   <div className="flex items-center gap-2 py-3 px-2 text-xs text-muted-foreground">
                                     <Loader2 className="size-3.5 animate-spin text-primary" />
-                                    <span>正在获取防火墙端口规则...</span>
+                                    <span>{t("serverDetails.refreshing")}</span>
                                   </div>
                                 ) : !instanceRules[instance.id] ||
                                   instanceRules[instance.id].length === 0 ? (
                                   <div className="py-2 px-1 text-[11px] text-muted-foreground">
-                                    暂无开放的公网端口规则。点击「添加端口规则」开放所需服务端口。
+                                    {t("discover.empty")}
                                   </div>
                                 ) : (
                                   <div className="border border-border/40 rounded overflow-hidden">
@@ -1537,19 +1555,19 @@ function CloudTab({ isVisible }: TabProps) {
                                       <thead className="bg-muted/50 text-muted-foreground border-b border-border/40 font-medium">
                                         <tr>
                                           <th className="py-1.5 px-2.5">
-                                            应用 / 类型
+                                            {t("serverDetails.details")}
                                           </th>
                                           <th className="py-1.5 px-2.5">
-                                            协议
+                                            {t("serverDetails.protocol")}
                                           </th>
                                           <th className="py-1.5 px-2.5">
-                                            端口范围
+                                            {t("serverDetails.portRange")}
                                           </th>
                                           <th className="py-1.5 px-2.5">
-                                            来源限制
+                                            {t("serverDetails.allowedCidr")}
                                           </th>
                                           <th className="py-1.5 px-2.5 text-right">
-                                            操作
+                                            {t("serverDetails.actions")}
                                           </th>
                                         </tr>
                                       </thead>
@@ -1576,7 +1594,7 @@ function CloudTab({ isVisible }: TabProps) {
                                                     </span>
                                                   ) : (
                                                     <span className="text-muted-foreground">
-                                                      自定义
+                                                      -
                                                     </span>
                                                   )}
                                                 </td>
@@ -1604,7 +1622,7 @@ function CloudTab({ isVisible }: TabProps) {
                                                   {rule.cidrs &&
                                                   rule.cidrs.length > 0
                                                     ? rule.cidrs.join(", ")
-                                                    : "0.0.0.0/0 (任意 IPv4)"}
+                                                    : "0.0.0.0/0"}
                                                 </td>
                                                 <td className="py-1.5 px-2.5 text-right font-sans">
                                                   <Button
@@ -1619,7 +1637,9 @@ function CloudTab({ isVisible }: TabProps) {
                                                         rule,
                                                       )
                                                     }
-                                                    title="关闭该端口"
+                                                    title={t(
+                                                      "serverDetails.delete",
+                                                    )}
                                                   >
                                                     {isDeleting ? (
                                                       <Loader2 className="size-2.5 animate-spin" />
