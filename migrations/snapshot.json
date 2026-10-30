@@ -68,6 +68,9 @@
         "lastSyncAt": {
           "type": "timestamp"
         },
+        "credits": {
+          "type": "text"
+        },
         "createdAt": {
           "type": "timestamp",
           "notNull": true,

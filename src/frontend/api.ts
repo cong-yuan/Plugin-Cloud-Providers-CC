@@ -28,6 +28,7 @@ export interface Account {
   status: string;
   lastError: string | null;
   lastSyncAt: string | null;
+  credits?: string | null;
 }
 
 export interface AccountInput {
@@ -41,6 +42,7 @@ export interface AccountInput {
   intervalMinutes: number;
   onRemoved: Account["onRemoved"];
   credentials?: Record<string, string>;
+  credits?: string | null;
 }
 
 export interface Instance {
@@ -49,6 +51,8 @@ export interface Instance {
   region: string;
   state: "running" | "stopped" | "other";
   address: string | null;
+  publicIp?: string | null;
+  privateIp?: string | null;
   imported: boolean;
   user?: string;
   keyName?: string;

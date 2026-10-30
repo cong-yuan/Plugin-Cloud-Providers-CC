@@ -1,15 +1,15 @@
 {
   "plugin": {
-    "name": "云服务商",
+    "name": "CC 云服务商",
     "description": "添加来自 AWS、Azure、Google Cloud、DigitalOcean、Hetzner 及其他云平台的服务器，并保持同步。"
   },
   "tab": {
-    "title": "云"
+    "title": "CC 云"
   },
   "permissions": {
     "view": {
       "title": "查看云账户",
-      "description": "打开“云”标签页并查看您的云账户。"
+      "description": "打开“CC 云”标签页并查看您的云账户。"
     },
     "manage": {
       "title": "管理云账户",

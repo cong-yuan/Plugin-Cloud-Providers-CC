@@ -25,7 +25,9 @@ function fail(res: Response, error: unknown) {
 }
 
 /** Never sends the keys back. */
-function publicAccount(row: AccountRow & { createdAt?: string }) {
+function publicAccount(
+  row: AccountRow & { createdAt?: string; credits?: string | null },
+) {
   return {
     id: row.id,
     provider: row.provider,
@@ -40,6 +42,7 @@ function publicAccount(row: AccountRow & { createdAt?: string }) {
     status: row.status,
     lastError: row.lastError,
     lastSyncAt: row.lastSyncAt,
+    credits: row.credits ?? null,
   };
 }
 
@@ -105,6 +108,10 @@ function options(
         ? Math.floor(minutes)
         : (fallback.intervalMinutes ?? 60),
     onRemoved: pick("onRemoved", REMOVED) ?? fallback.onRemoved ?? "keep",
+    credits:
+      body.credits === undefined
+        ? (fallback.credits ?? null)
+        : text("credits", 255) || null,
   };
 }
 

@@ -30,6 +30,7 @@ export interface AccountRow {
   status: string;
   lastError: string | null;
   lastSyncAt: string | null;
+  credits?: string | null;
 }
 
 export interface SyncStores {

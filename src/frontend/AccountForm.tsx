@@ -42,6 +42,7 @@ export function AccountForm({
     [providers, providerId],
   );
   const [name, setName] = useState(account?.name ?? "");
+  const [credits, setCredits] = useState(account?.credits ?? "");
   const [folder, setFolder] = useState(account?.folder ?? "");
   const [defaultUser, setDefaultUser] = useState(account?.defaultUser ?? "");
   const [credentialId, setCredentialId] = useState<number | null>(
@@ -85,6 +86,7 @@ export function AccountForm({
         syncMode,
         intervalMinutes: interval,
         onRemoved,
+        credits: credits.trim() || null,
         ...(hasKeys ? { credentials: { ...selectDefaults, ...keys } } : {}),
       });
     } finally {
@@ -137,6 +139,18 @@ export function AccountForm({
               value={name}
               placeholder={t("form.namePlaceholder")}
               onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <label className={labelClass}>
+              {t("form.credits", {
+                defaultValue: "Credits & Remaining Days / 额度与天数",
+              })}
+            </label>
+            <Input
+              value={credits}
+              placeholder="Credits remaining [$200.00 USD] Days remaining 182 days (Apr 29, 2027)"
+              onChange={(e) => setCredits(e.target.value)}
             />
           </div>
           {provider?.fields.map((field) => (

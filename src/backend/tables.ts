@@ -33,6 +33,7 @@ export const accounts = defineTable(
     status: varchar(16).notNull(),
     lastError: text(),
     lastSyncAt: timestamp(),
+    credits: text(),
     createdAt: timestamp().notNull().defaultNow(),
   },
   {

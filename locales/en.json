@@ -1,15 +1,15 @@
 {
   "plugin": {
-    "name": "Cloud Providers",
+    "name": "Cloud Providers CC",
     "description": "Add hosts from AWS, Azure, Google Cloud, DigitalOcean, Hetzner and other clouds, and keep them in sync."
   },
   "tab": {
-    "title": "Cloud"
+    "title": "CC Cloud"
   },
   "permissions": {
     "view": {
       "title": "See cloud accounts",
-      "description": "Open the Cloud tab and see your cloud accounts."
+      "description": "Open the CC Cloud tab and see your cloud accounts."
     },
     "manage": {
       "title": "Manage cloud accounts",
