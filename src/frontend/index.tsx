@@ -45,6 +45,116 @@ import { DiscoverView } from "./DiscoverView";
 import { CloudCard } from "./CloudCard";
 
 const TAB_ID = "cc-cloud-providers";
+const CACHE_PREFIX = "cc_cloud_instances_";
+
+function loadCachedInstances(accountId: number): Instance[] {
+  try {
+    const raw = localStorage.getItem(`${CACHE_PREFIX}${accountId}`);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+function saveCachedInstances(accountId: number, instances: Instance[]) {
+  try {
+    localStorage.setItem(
+      `${CACHE_PREFIX}${accountId}`,
+      JSON.stringify(instances),
+    );
+  } catch {}
+}
+
+function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
+  const folder = account.folder || account.name;
+  const matchingHosts = (hosts || []).filter((h) => {
+    const settings =
+      h.pluginSettings?.["cc-cloud-providers"] ||
+      h.pluginSettings?.["cloud-providers"];
+    if (settings?.accountId === account.id) return true;
+    return h.folder === folder;
+  });
+
+  return matchingHosts.map((h) => {
+    const settings =
+      h.pluginSettings?.["cc-cloud-providers"] ||
+      h.pluginSettings?.["cloud-providers"];
+    const instanceId = settings?.instanceId || `host-${h.id}`;
+    const regionTag = (h.tags || []).find(
+      (t: string) =>
+        t.startsWith("cc-cloud:") &&
+        ![
+          "cc-cloud:aws",
+          "cc-cloud:ecs",
+          "cc-cloud:lightsail",
+          "cc-cloud:stopped",
+        ].includes(t),
+    );
+    const region = regionTag
+      ? regionTag.replace("cc-cloud:", "")
+      : account.region || "";
+    const isStopped = (h.tags || []).includes("cc-cloud:stopped");
+
+    return {
+      id: instanceId,
+      name: h.name,
+      address: h.ip,
+      publicIp: h.ip,
+      privateIp: null,
+      region,
+      state: isStopped ? "stopped" : "running",
+      imported: true,
+    };
+  });
+}
+
+function getAccountRegions(
+  account: Account,
+  instances: Instance[] | undefined,
+  hosts: any[],
+): string[] {
+  const set = new Set<string>();
+
+  if (account.region) {
+    account.region
+      .split(/[,，\s]+/)
+      .map((r) => r.trim())
+      .filter((r) => r && r.toLowerCase() !== "all")
+      .forEach((r) => set.add(r));
+  }
+
+  if (instances && instances.length > 0) {
+    instances
+      .map((i) => i.region?.trim())
+      .filter((r): r is string => Boolean(r) && r.toLowerCase() !== "all")
+      .forEach((r) => set.add(r));
+  }
+
+  const folder = account.folder || account.name;
+  const matchingHosts = (hosts || []).filter((h) => {
+    const settings =
+      h.pluginSettings?.["cc-cloud-providers"] ||
+      h.pluginSettings?.["cloud-providers"];
+    return settings?.accountId === account.id || h.folder === folder;
+  });
+  for (const h of matchingHosts) {
+    const tag = (h.tags || []).find(
+      (t: string) =>
+        t.startsWith("cc-cloud:") &&
+        ![
+          "cc-cloud:aws",
+          "cc-cloud:ecs",
+          "cc-cloud:lightsail",
+          "cc-cloud:stopped",
+        ].includes(t),
+    );
+    if (tag) set.add(tag.replace("cc-cloud:", ""));
+  }
+
+  return Array.from(set);
+}
 
 function parseCredits(credits?: string | null) {
   if (!credits) {
@@ -129,7 +239,24 @@ function CloudTab({ isVisible }: TabProps) {
   );
   const [accountInstances, setAccountInstances] = useState<
     Record<number, Instance[]>
-  >({});
+  >(() => {
+    const initial: Record<number, Instance[]> = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith(CACHE_PREFIX)) {
+          const accountId = Number(key.replace(CACHE_PREFIX, ""));
+          if (accountId) {
+            const parsed = JSON.parse(localStorage.getItem(key) || "[]");
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              initial[accountId] = parsed;
+            }
+          }
+        }
+      }
+    } catch {}
+    return initial;
+  });
   const [loadingInstances, setLoadingInstances] = useState<
     Record<number, boolean>
   >({});
@@ -161,8 +288,11 @@ function CloudTab({ isVisible }: TabProps) {
     try {
       const list = await api.discover(accountId);
       setAccountInstances((prev) => ({ ...prev, [accountId]: list }));
+      saveCachedInstances(accountId, list);
+      return list;
     } catch (error) {
       toast.error(errorMessage(error));
+      return [];
     } finally {
       setLoadingInstances((prev) => ({ ...prev, [accountId]: false }));
     }
@@ -175,8 +305,25 @@ function CloudTab({ isVisible }: TabProps) {
         next.delete(accountId);
       } else {
         next.add(accountId);
-        if (!accountInstances[accountId]) {
-          void loadInstances(accountId);
+        // Read already existing list without querying cloud
+        const current = accountInstances[accountId];
+        if (!current || current.length === 0) {
+          const cached = loadCachedInstances(accountId);
+          if (cached.length > 0) {
+            setAccountInstances((prev) => ({ ...prev, [accountId]: cached }));
+          } else {
+            const account = accounts.find((a) => a.id === accountId);
+            if (account) {
+              const fromHosts = getInstancesFromHosts(account, hosts);
+              if (fromHosts.length > 0) {
+                setAccountInstances((prev) => ({
+                  ...prev,
+                  [accountId]: fromHosts,
+                }));
+                saveCachedInstances(accountId, fromHosts);
+              }
+            }
+          }
         }
       }
       return next;
@@ -304,6 +451,10 @@ function CloudTab({ isVisible }: TabProps) {
       );
       if (report.failed > 0)
         toast.error(t("syncFailed", { count: report.failed }));
+
+      // Refresh latest server list after sync
+      await loadInstances(account.id);
+      setExpandedAccountIds((prev) => new Set(prev).add(account.id));
     } catch (error) {
       toast.error(errorMessage(error));
     } finally {
@@ -374,6 +525,7 @@ function CloudTab({ isVisible }: TabProps) {
         const instances = accountInstances[account.id] || [];
         const isLoading = loadingInstances[account.id];
         const creditInfo = parseCredits(account.credits);
+        const accountRegions = getAccountRegions(account, instances, hosts);
 
         return (
           <div key={account.id} className="flex flex-col">
@@ -396,6 +548,14 @@ function CloudTab({ isVisible }: TabProps) {
                   <span className="font-semibold text-foreground text-[13px]">
                     {account.name}
                   </span>
+                  {accountRegions.map((region) => (
+                    <span
+                      key={region}
+                      className="inline-flex items-center rounded bg-sky-500/10 px-1.5 py-0.5 text-[10px] font-semibold text-sky-600 dark:text-sky-400 border border-sky-500/25"
+                    >
+                      {region}
+                    </span>
+                  ))}
                   <span className="inline-flex items-center rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
                     {creditInfo.amount}
                   </span>
@@ -467,18 +627,21 @@ function CloudTab({ isVisible }: TabProps) {
                   </div>
                 ) : instances.length === 0 ? (
                   <div className="py-2.5 px-3 text-xs text-muted-foreground flex items-center justify-between">
-                    <span>该账户下暂未找到可用服务器实例。</span>
+                    <span>
+                      暂未同步服务器列表，点击「立即同步」获取最新实例。
+                    </span>
                     <Button
                       type="button"
                       size="sm"
-                      variant="ghost"
-                      className="h-6 text-xs text-muted-foreground hover:text-foreground"
+                      variant="outline"
+                      className="h-6 text-xs gap-1 border-accent-brand/40 text-accent-brand"
+                      disabled={busy === account.id || isLoading}
                       onClick={(e) => {
                         e.stopPropagation();
-                        void loadInstances(account.id);
+                        void syncNow(account);
                       }}
                     >
-                      <RefreshCw className="mr-1 size-3" /> 重新检测
+                      <RefreshCw className="size-3" /> 立即同步
                     </Button>
                   </div>
                 ) : (
@@ -497,8 +660,7 @@ function CloudTab({ isVisible }: TabProps) {
                       <ListRow
                         key={instance.id}
                         stripe={instIndex}
-                        onClick={() => void handleConnect(account, instance)}
-                        className="cursor-pointer select-none"
+                        className="select-none"
                         icon={
                           <span
                             className={cn(

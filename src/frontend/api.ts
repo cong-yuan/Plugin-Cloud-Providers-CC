@@ -29,6 +29,7 @@ export interface Account {
   lastError: string | null;
   lastSyncAt: string | null;
   credits?: string | null;
+  region?: string | null;
 }
 
 export interface AccountInput {

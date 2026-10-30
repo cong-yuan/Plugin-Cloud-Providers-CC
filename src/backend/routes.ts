@@ -27,6 +27,7 @@ function fail(res: Response, error: unknown) {
 /** Never sends the keys back. */
 function publicAccount(
   row: AccountRow & { createdAt?: string; credits?: string | null },
+  region: string | null = null,
 ) {
   return {
     id: row.id,
@@ -43,7 +44,27 @@ function publicAccount(
     lastError: row.lastError,
     lastSyncAt: row.lastSyncAt,
     credits: row.credits ?? null,
+    region,
   };
+}
+
+async function toPublicAccount(
+  ctx: PluginContext,
+  row: AccountRow & { createdAt?: string; credits?: string | null },
+) {
+  let region: string | null = null;
+  try {
+    const raw = await ctx.secrets.unseal(row.credentials);
+    if (raw) {
+      const creds = JSON.parse(raw);
+      region = creds.regions || creds.region || creds.defaultZone || null;
+      if (typeof region === "string") {
+        region = region.trim();
+        if (region.toLowerCase() === "all" || !region) region = null;
+      }
+    }
+  } catch {}
+  return publicAccount(row, region);
 }
 
 function cleanCredentials(
@@ -218,7 +239,9 @@ export function registerRoutes(
       .select()
       .from(stores.accounts)
       .where(eq(stores.accounts.ownerId, actor(ctx)));
-    res.json({ accounts: rows.map(publicAccount) });
+    res.json({
+      accounts: await Promise.all(rows.map((r) => toPublicAccount(ctx, r))),
+    });
   });
 
   /**
@@ -294,7 +317,7 @@ export function registerRoutes(
           ),
         )
         .limit(1);
-      res.status(201).json({ account: publicAccount(row) });
+      res.status(201).json({ account: await toPublicAccount(ctx, row) });
     } catch (error) {
       fail(res, error);
     }
