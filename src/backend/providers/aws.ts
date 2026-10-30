@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import type { PluginFetch } from "@termix-ssh/plugin-sdk/backend";
 import { signV4 } from "./auth/sigv4.js";
 import { send, splitList } from "./http.js";
@@ -144,6 +145,94 @@ interface LightsailInstance {
   };
 }
 
+function toRsaPrivateKeyPem(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.includes("-----BEGIN")) {
+    return trimmed;
+  }
+  try {
+    const decoded = Buffer.from(trimmed, "base64").toString("utf8");
+    if (decoded.includes("-----BEGIN")) {
+      return decoded.trim();
+    }
+  } catch {}
+  const clean = trimmed.replace(/\s+/g, "");
+  const lines = clean.match(/.{1,64}/g) || [clean];
+  return `-----BEGIN RSA PRIVATE KEY-----\n${lines.join("\n")}\n-----END RSA PRIVATE KEY-----\n`;
+}
+
+function rsaToOpenSshPublicKey(
+  privateKeyPem: string,
+  rawPublicKey?: string,
+): string {
+  try {
+    const priv = crypto.createPrivateKey(privateKeyPem);
+    const pub = crypto.createPublicKey(priv);
+    const jwk = pub.export({ format: "jwk" });
+    if (jwk.kty === "RSA" && jwk.n && jwk.e) {
+      const e = Buffer.from(jwk.e, "base64url");
+      const n = Buffer.from(jwk.n, "base64url");
+      const eBuf = e[0] & 0x80 ? Buffer.concat([Buffer.from([0]), e]) : e;
+      const nBuf = n[0] & 0x80 ? Buffer.concat([Buffer.from([0]), n]) : n;
+      const prefix = Buffer.from("ssh-rsa");
+      const len = 4 + prefix.length + 4 + eBuf.length + 4 + nBuf.length;
+      const buf = Buffer.alloc(len);
+      let offset = 0;
+      buf.writeUInt32BE(prefix.length, offset);
+      offset += 4;
+      prefix.copy(buf, offset);
+      offset += prefix.length;
+      buf.writeUInt32BE(eBuf.length, offset);
+      offset += 4;
+      eBuf.copy(buf, offset);
+      offset += eBuf.length;
+      buf.writeUInt32BE(nBuf.length, offset);
+      offset += 4;
+      nBuf.copy(buf, offset);
+      return `ssh-rsa ${buf.toString("base64")}`;
+    }
+  } catch {}
+
+  if (rawPublicKey) {
+    const trimmed = rawPublicKey.trim();
+    if (trimmed.startsWith("ssh-rsa")) return trimmed;
+    try {
+      const decoded = Buffer.from(trimmed, "base64").toString("utf8");
+      if (decoded.startsWith("ssh-rsa")) return decoded.trim();
+    } catch {}
+    const clean = trimmed.replace(/\s+/g, "");
+    const lines = clean.match(/.{1,64}/g) || [clean];
+    const pubPem = `-----BEGIN PUBLIC KEY-----\n${lines.join("\n")}\n-----END PUBLIC KEY-----\n`;
+    try {
+      const pub = crypto.createPublicKey(pubPem);
+      const jwk = pub.export({ format: "jwk" });
+      if (jwk.n && jwk.e) {
+        const e = Buffer.from(jwk.e, "base64url");
+        const n = Buffer.from(jwk.n, "base64url");
+        const eBuf = e[0] & 0x80 ? Buffer.concat([Buffer.from([0]), e]) : e;
+        const nBuf = n[0] & 0x80 ? Buffer.concat([Buffer.from([0]), n]) : n;
+        const prefix = Buffer.from("ssh-rsa");
+        const len = 4 + prefix.length + 4 + eBuf.length + 4 + nBuf.length;
+        const buf = Buffer.alloc(len);
+        let offset = 0;
+        buf.writeUInt32BE(prefix.length, offset);
+        offset += 4;
+        prefix.copy(buf, offset);
+        offset += prefix.length;
+        buf.writeUInt32BE(eBuf.length, offset);
+        offset += 4;
+        eBuf.copy(buf, offset);
+        offset += eBuf.length;
+        buf.writeUInt32BE(nBuf.length, offset);
+        offset += 4;
+        nBuf.copy(buf, offset);
+        return `ssh-rsa ${buf.toString("base64")}`;
+      }
+    } catch {}
+  }
+  return "";
+}
+
 async function downloadLightsailDefaultKeyPair(
   fetch: PluginFetch,
   creds: Credentials,
@@ -175,12 +264,8 @@ async function downloadLightsailDefaultKeyPair(
       publicKeyBase64?: string;
     };
     if (!json.privateKeyBase64) return null;
-    const privateKey = Buffer.from(json.privateKeyBase64, "base64").toString(
-      "utf8",
-    );
-    const publicKey = json.publicKeyBase64
-      ? Buffer.from(json.publicKeyBase64, "base64").toString("utf8")
-      : "";
+    const privateKey = toRsaPrivateKeyPem(json.privateKeyBase64);
+    const publicKey = rsaToOpenSshPublicKey(privateKey, json.publicKeyBase64);
     return {
       name: `Lightsail-${region}-DefaultKeyPair`,
       privateKey,

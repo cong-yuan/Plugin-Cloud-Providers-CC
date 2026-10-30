@@ -14,6 +14,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "tag": "node scripts/tag.mjs",
+    "dev:install": "node scripts/dev-install.mjs",
     "prepare": "husky || true"
   },
   "devDependencies": {

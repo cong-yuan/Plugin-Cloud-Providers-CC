@@ -327,8 +327,12 @@ describe("aws", () => {
   });
 
   it("downloads Lightsail default key pair and reads custom port and sshKeyName", async () => {
-    const privB64 = Buffer.from("FAKE-RSA-PRIVATE-KEY").toString("base64");
-    const pubB64 = Buffer.from("FAKE-RSA-PUBLIC-KEY").toString("base64");
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+    });
+    const derPrivate = privateKey.export({ format: "der", type: "pkcs1" });
+    const privB64 = derPrivate.toString("base64");
+    const pubB64 = "";
     const fetch = fakeFetch((url, init) => {
       const target = init.headers["x-amz-target"];
       if (target === "Lightsail_20161128.GetInstances") {
@@ -383,8 +387,8 @@ describe("aws", () => {
       keyName: "LightsailDefaultKeyPair",
       autoKey: {
         name: "Lightsail-us-east-1-DefaultKeyPair",
-        privateKey: "FAKE-RSA-PRIVATE-KEY",
-        publicKey: "FAKE-RSA-PUBLIC-KEY",
+        privateKey: expect.stringContaining("BEGIN RSA PRIVATE KEY"),
+        publicKey: expect.stringMatching(/^ssh-rsa AAAA/),
         keyType: "ssh-rsa",
       },
     });
