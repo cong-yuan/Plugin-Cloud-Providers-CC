@@ -56,6 +56,11 @@ try {
   });
   execSync(`git tag ${tag}`, { stdio: "inherit" });
   execSync(`git push origin HEAD --tags`, { stdio: "inherit" });
+  try {
+    execSync(`gh workflow run release.yml -f tag=${tag}`, { stdio: "inherit" });
+  } catch {
+    // optional fallback
+  }
   console.log(`\n🎉 Successfully pushed ${tag}!`);
   console.log(
     `GitHub Actions will automatically build, sign, release and update your Termix registry.`,
