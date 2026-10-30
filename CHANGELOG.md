@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.11
+
+### Changed
+
+- feat: separate snapshots and launch script, stable layout and default expanded
+
 ## 1.1.10
 
 ### Changed
