@@ -672,7 +672,12 @@ function CloudTab({ isVisible }: TabProps) {
     // Not yet imported or not found in host list: import and connect
     setImportingId(instance.id);
     try {
-      toast.info(`正在连接 ${instance.name}...`);
+      toast.info(
+        t("instances.connectingToast", {
+          name: instance.name,
+          defaultValue: `Connecting to ${instance.name}...`,
+        }),
+      );
       await api.importIds(account.id, [instance.id]);
       setAccountInstances((prev) => ({
         ...prev,
@@ -699,7 +704,12 @@ function CloudTab({ isVisible }: TabProps) {
             "terminal",
           );
         } else {
-          toast.success(`已导入主机 ${instance.name}，请在主机列表中查看`);
+          toast.success(
+            t("instances.importedToast", {
+              name: instance.name,
+              defaultValue: `Host ${instance.name} imported. Check host list.`,
+            }),
+          );
         }
       }, 600);
     } catch (err) {
@@ -717,7 +727,12 @@ function CloudTab({ isVisible }: TabProps) {
     if (matchingHost && tabs?.openTab) {
       tabs.openTab(matchingHost, "sftp");
     } else {
-      toast.error("该服务器尚未导入为主机，请先点击「连接」自动导入");
+      toast.error(
+        t("instances.notImportedToast", {
+          defaultValue:
+            "Host not imported yet. Click 'Connect' to import automatically.",
+        }),
+      );
     }
   }
 
@@ -725,7 +740,12 @@ function CloudTab({ isVisible }: TabProps) {
     setImportingId(instance.id);
     try {
       await api.importIds(account.id, [instance.id]);
-      toast.success(`已成功导入 ${instance.name}`);
+      toast.success(
+        t("instances.importSuccessToast", {
+          name: instance.name,
+          defaultValue: `Successfully imported ${instance.name}`,
+        }),
+      );
       setAccountInstances((prev) => ({
         ...prev,
         [account.id]: (prev[account.id] || []).map((i) =>
@@ -965,12 +985,19 @@ function CloudTab({ isVisible }: TabProps) {
                 {isLoading ? (
                   <div className="flex items-center gap-2 py-3 px-3 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin text-accent-brand" />
-                    <span>正在获取服务器列表...</span>
+                    <span>
+                      {t("instances.loadingServers", {
+                        defaultValue: "Fetching server list...",
+                      })}
+                    </span>
                   </div>
                 ) : instances.length === 0 ? (
                   <div className="py-2.5 px-3 text-xs text-muted-foreground flex items-center justify-between">
                     <span>
-                      暂未同步服务器列表，点击「立即同步」获取最新实例。
+                      {t("instances.emptyServers", {
+                        defaultValue:
+                          "No servers synced yet. Click 'Sync now' to fetch instances.",
+                      })}
                     </span>
                     <Button
                       type="button"
@@ -983,7 +1010,8 @@ function CloudTab({ isVisible }: TabProps) {
                         void syncNow(account);
                       }}
                     >
-                      <RefreshCw className="size-3" /> 立即同步
+                      <RefreshCw className="size-3" />{" "}
+                      {t("instances.syncNow", { defaultValue: "Sync now" })}
                     </Button>
                   </div>
                 ) : (
@@ -1003,13 +1031,17 @@ function CloudTab({ isVisible }: TabProps) {
                       account.name.toLowerCase().includes("光帆") ||
                       (account.provider === "aws" &&
                         !instance.id.match(/(?:^|\/)i-[0-9a-f]+/i));
-                    const tagLabel = isLightsail ? "光帆" : "ECS";
+                    const tagLabel = isLightsail
+                      ? t("instances.lightsail", { defaultValue: "Lightsail" })
+                      : "ECS";
                     const tagTone = isLightsail ? "warning" : "brand";
                     const ip =
                       instance.address ||
                       instance.publicIp ||
                       instance.privateIp ||
-                      "无公网 IP";
+                      t("instances.noPublicIp", {
+                        defaultValue: "No public IP",
+                      });
                     const isRunning = instance.state === "running";
                     const displayZone =
                       instance.details?.availabilityZone || instance.region;
@@ -1023,6 +1055,16 @@ function CloudTab({ isVisible }: TabProps) {
                       const isTraffic =
                         instance.network.type === "traffic_package";
                       const isBandwidth = instance.network.type === "bandwidth";
+                      const rawLabel = instance.network.label;
+                      const formattedLabel = rawLabel
+                        .replace(
+                          /\/月$/,
+                          `/${t("instances.perMonth", { defaultValue: "mo" })}`,
+                        )
+                        .replace(
+                          /\/mo$/,
+                          `/${t("instances.perMonth", { defaultValue: "mo" })}`,
+                        );
                       networkInfo = {
                         icon: isTraffic ? (
                           <ArrowDownUp className="size-2.5 text-amber-500 shrink-0" />
@@ -1032,24 +1074,30 @@ function CloudTab({ isVisible }: TabProps) {
                           <Activity className="size-2.5 text-slate-400 shrink-0" />
                         ),
                         text: isTraffic
-                          ? `流量: ${instance.network.label}`
+                          ? `${t("instances.trafficPrefix", { defaultValue: "Transfer:" })} ${formattedLabel}`
                           : isBandwidth
-                            ? `带宽: ${instance.network.label}`
-                            : instance.network.label,
+                            ? `${t("instances.bandwidthPrefix", { defaultValue: "Bandwidth:" })} ${formattedLabel}`
+                            : rawLabel === "按量计费 (最高 5 Gbps)"
+                              ? t("instances.payAsYouGo", {
+                                  defaultValue: rawLabel,
+                                })
+                              : rawLabel,
                       };
                     } else if (isLightsail) {
                       networkInfo = {
                         icon: (
                           <ArrowDownUp className="size-2.5 text-amber-500 shrink-0" />
                         ),
-                        text: "流量: 1000 GB/月",
+                        text: `${t("instances.trafficPrefix", { defaultValue: "Transfer:" })} 1000 GB/${t("instances.perMonth", { defaultValue: "mo" })}`,
                       };
                     } else if (account.provider === "aws") {
                       networkInfo = {
                         icon: (
                           <Activity className="size-2.5 text-slate-400 shrink-0" />
                         ),
-                        text: "按量计费 (最高 5 Gbps)",
+                        text: t("instances.payAsYouGo", {
+                          defaultValue: "Pay-as-you-go (up to 5 Gbps)",
+                        }),
                       };
                     }
 
@@ -1066,7 +1114,17 @@ function CloudTab({ isVisible }: TabProps) {
                                   ? "bg-emerald-500"
                                   : "bg-muted-foreground/40",
                               )}
-                              title={isRunning ? "运行中" : instance.state}
+                              title={
+                                isRunning
+                                  ? t("instances.running", {
+                                      defaultValue: "Running",
+                                    })
+                                  : instance.state === "stopped"
+                                    ? t("instances.stopped", {
+                                        defaultValue: "Stopped",
+                                      })
+                                    : instance.state
+                              }
                             />
                           }
                           title={
@@ -1081,7 +1139,11 @@ function CloudTab({ isVisible }: TabProps) {
                                 </span>
                               )}
                               {instance.imported && (
-                                <ListBadge tone="success">已导入</ListBadge>
+                                <ListBadge tone="success">
+                                  {t("instances.imported", {
+                                    defaultValue: "Imported",
+                                  })}
+                                </ListBadge>
                               )}
                             </div>
                           }
@@ -1104,8 +1166,17 @@ function CloudTab({ isVisible }: TabProps) {
                               <span>
                                 ·{" "}
                                 {isRunning
-                                  ? "运行中"
-                                  : instance.state || "已停止"}
+                                  ? t("instances.running", {
+                                      defaultValue: "Running",
+                                    })
+                                  : instance.state === "stopped"
+                                    ? t("instances.stopped", {
+                                        defaultValue: "Stopped",
+                                      })
+                                    : instance.state ||
+                                      t("instances.stopped", {
+                                        defaultValue: "Stopped",
+                                      })}
                               </span>
                               {networkInfo && (
                                 <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/90 bg-muted/50 px-1.5 py-0.5 rounded border border-border/40 font-mono">
@@ -1155,10 +1226,14 @@ function CloudTab({ isVisible }: TabProps) {
                               <ListRowAction
                                 label={t("serverDetails.copyIp")}
                                 onClick={() => {
-                                  if (ip && ip !== "无公网 IP") {
-                                    void navigator.clipboard.writeText(ip);
+                                  const validIp =
+                                    instance.publicIp ||
+                                    instance.address ||
+                                    instance.privateIp;
+                                  if (validIp) {
+                                    void navigator.clipboard.writeText(validIp);
                                     toast.success(
-                                      `${t("serverDetails.copied")}: ${ip}`,
+                                      `${t("serverDetails.copied")}: ${validIp}`,
                                     );
                                   }
                                 }}

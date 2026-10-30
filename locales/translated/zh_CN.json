@@ -208,5 +208,23 @@
     "syncingHost": "正在同步主机...",
     "copyIp": "复制 IP",
     "copied": "已复制到剪贴板"
+  },
+  "instances": {
+    "lightsail": "光帆",
+    "imported": "已导入",
+    "trafficPrefix": "流量:",
+    "bandwidthPrefix": "带宽:",
+    "perMonth": "月",
+    "running": "运行中",
+    "stopped": "已停止",
+    "connectingToast": "正在连接 {{name}}...",
+    "importedToast": "已导入主机 {{name}}，请在主机列表中查看",
+    "notImportedToast": "该服务器尚未导入为主机，请先点击「连接」自动导入",
+    "importSuccessToast": "已成功导入 {{name}}",
+    "loadingServers": "正在获取服务器列表...",
+    "emptyServers": "暂未同步服务器列表，点击「立即同步」获取最新实例。",
+    "syncNow": "立即同步",
+    "noPublicIp": "无公网 IP",
+    "payAsYouGo": "按量计费 (最高 5 Gbps)"
   }
 }

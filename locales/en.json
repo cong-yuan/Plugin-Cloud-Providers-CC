@@ -208,5 +208,23 @@
     "syncingHost": "Syncing host...",
     "copyIp": "Copy IP",
     "copied": "Copied to clipboard"
+  },
+  "instances": {
+    "lightsail": "Lightsail",
+    "imported": "Imported",
+    "trafficPrefix": "Transfer:",
+    "bandwidthPrefix": "Bandwidth:",
+    "perMonth": "mo",
+    "running": "Running",
+    "stopped": "Stopped",
+    "connectingToast": "Connecting to {{name}}...",
+    "importedToast": "Host {{name}} imported. Check host list.",
+    "notImportedToast": "Host not imported yet. Click 'Connect' to import automatically.",
+    "importSuccessToast": "Successfully imported {{name}}",
+    "loadingServers": "Fetching server list...",
+    "emptyServers": "No servers synced yet. Click 'Sync now' to fetch instances.",
+    "syncNow": "Sync now",
+    "noPublicIp": "No public IP",
+    "payAsYouGo": "Pay-as-you-go (up to 5 Gbps)"
   }
 }
