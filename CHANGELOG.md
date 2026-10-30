@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.5
+
+### Changed
+
+- Fix Lightsail instance identification and tags
+
 ## 1.1.4
 
 ### Changed
