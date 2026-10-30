@@ -57,7 +57,10 @@ try {
   execSync(`git tag ${tag}`, { stdio: "inherit" });
   execSync(`git push origin HEAD --tags`, { stdio: "inherit" });
   try {
-    execSync(`gh workflow run release.yml -f tag=${tag}`, { stdio: "inherit" });
+    execSync(
+      `gh workflow run release.yml -R cong-yuan/Plugin-Cloud-Providers-CC -f tag=${tag}`,
+      { stdio: "inherit" },
+    );
   } catch {
     // optional fallback
   }
