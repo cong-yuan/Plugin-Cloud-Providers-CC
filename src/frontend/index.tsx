@@ -578,8 +578,11 @@ function CloudTab({ isVisible }: TabProps) {
                       : t("status.never")}
                 </span>
               }
-              actions={
-                <>
+              trailing={
+                <div
+                  className="flex items-center gap-0.5"
+                  onClick={(e) => e.stopPropagation()}
+                >
                   <ListRowAction
                     label={t("test")}
                     disabled={busy === account.id}
@@ -613,7 +616,7 @@ function CloudTab({ isVisible }: TabProps) {
                   >
                     <Trash2 />
                   </ListRowAction>
-                </>
+                </div>
               }
             />
 
@@ -702,8 +705,11 @@ function CloudTab({ isVisible }: TabProps) {
                             </span>
                           </span>
                         }
-                        actions={
-                          <>
+                        trailing={
+                          <div
+                            className="flex items-center gap-0.5"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <ListRowAction
                               label="连接"
                               tone="brand"
@@ -742,7 +748,7 @@ function CloudTab({ isVisible }: TabProps) {
                                 <DownloadCloud />
                               </ListRowAction>
                             )}
-                          </>
+                          </div>
                         }
                       />
                     );
