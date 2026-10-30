@@ -2,8 +2,10 @@ import fs from "node:fs";
 import { execSync } from "node:child_process";
 
 const arg = process.argv[2] || "patch";
+const message = process.argv[3] || "Maintenance update and release";
 const manifestPath = "manifest.json";
 const packagePath = "package.json";
+const changelogPath = "CHANGELOG.md";
 
 const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 const currentVersion = manifest.version;
@@ -26,14 +28,29 @@ console.log(
   `Bumping version from ${currentVersion} -> ${nextVersion} (${tag})...`,
 );
 
+// Update manifest and package.json
 for (const file of [manifestPath, packagePath]) {
   const data = JSON.parse(fs.readFileSync(file, "utf8"));
   data.version = nextVersion;
   fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", "utf8");
 }
 
+// Update CHANGELOG.md
+if (fs.existsSync(changelogPath)) {
+  let changelog = fs.readFileSync(changelogPath, "utf8");
+  if (!changelog.includes(`## ${nextVersion}`)) {
+    changelog = changelog.replace(
+      /^# Changelog\s*\n/m,
+      `# Changelog\n\n## ${nextVersion}\n\n### Changed\n\n- ${message}\n\n`,
+    );
+    fs.writeFileSync(changelogPath, changelog, "utf8");
+  }
+}
+
 try {
-  execSync(`git add ${manifestPath} ${packagePath}`, { stdio: "inherit" });
+  execSync(`git add ${manifestPath} ${packagePath} ${changelogPath}`, {
+    stdio: "inherit",
+  });
   execSync(`git commit -m "chore: bump version to ${tag}"`, {
     stdio: "inherit",
   });
