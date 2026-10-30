@@ -1,14 +1,5 @@
 import React, { useEffect, useState } from "react";
-import {
-  Server,
-  Zap,
-  Check,
-  Loader2,
-  Globe,
-  Camera,
-  FileCode,
-  Network,
-} from "lucide-react";
+import { Zap, Check, Loader2, Camera, FileCode, Network } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -342,22 +333,21 @@ export function CreateLightsailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <Zap className="size-5 text-amber-500" />
+      <DialogContent className="w-[95vw] sm:max-w-[800px] max-h-[92vh] overflow-y-auto">
+        <DialogHeader className="pb-1">
+          <DialogTitle className="flex items-center gap-2 text-base">
+            <Zap className="size-4.5 text-amber-500" />
             创建 AWS Lightsail 光帆服务器
           </DialogTitle>
-          <DialogDescription>
-            直接调用 AWS Lightsail 接口开机，开机完成后将自动同步并导入到
-            Termix。
+          <DialogDescription className="text-xs">
+            调用 AWS Lightsail 接口开机，开机完成后将自动同步并导入到 Termix。
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleCreate} className="space-y-4 py-2 text-xs">
+        <form onSubmit={handleCreate} className="space-y-3 py-1 text-xs">
           {/* 实例名称 */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-semibold text-foreground">
+          <div className="space-y-1">
+            <label className="text-[11px] font-medium text-foreground">
               实例名称 (Instance Name)
             </label>
             <Input
@@ -365,121 +355,114 @@ export function CreateLightsailModal({
               onChange={(e) => setInstanceName(e.target.value)}
               placeholder="e.g. debian-prod-01"
               required
-              className="h-8 w-full text-xs font-mono"
+              className="h-7 w-full text-xs font-mono px-2.5 py-0.5"
             />
           </div>
 
-          {/* 可用区选择 */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
-              <span>所在可用区 (Availability Zone)</span>
-              {plansLoading && (
-                <span className="text-muted-foreground text-[10px] flex items-center gap-1">
-                  <Loader2 className="size-2.5 animate-spin" /> 加载可用区...
-                </span>
-              )}
-            </label>
-            <Select value={zone} onValueChange={setZone}>
-              <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="选择可用区" />
-              </SelectTrigger>
-              <SelectContent>
-                {zones.map((z) => (
-                  <SelectItem key={z} value={z} className="text-xs">
-                    {formatZone(z)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 系统镜像 */}
-          <div className="space-y-1.5">
-            <label className="text-[11px] font-semibold text-foreground">
-              系统镜像 (Blueprint / OS)
-            </label>
-            <Select value={blueprintId} onValueChange={setBlueprintId}>
-              <SelectTrigger className="h-8 w-full text-xs">
-                <SelectValue placeholder="选择系统镜像" />
-              </SelectTrigger>
-              <SelectContent>
-                {blueprints.map((b) => (
-                  <SelectItem key={b.id} value={b.id} className="text-xs">
-                    {b.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-
-          {/* 网络大分类: Dual-stack 与 IPv6-only */}
-          <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/20 p-3">
-            <label className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-              <Network className="size-3.5 text-primary" />
-              网络类型 (Networking Type)
-            </label>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={() => handleNetworkTypeChange("dual_stack")}
-                className={cn(
-                  "flex flex-col text-left p-3 rounded-lg border transition-all select-none cursor-pointer",
-                  networkType === "dual_stack"
-                    ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
-                    : "border-border/60 bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
-                )}
-              >
-                <div className="flex items-center justify-between font-semibold text-xs">
-                  <span className="text-foreground">
-                    Dual-stack (双栈 IPv4 + IPv6)
+          {/* 所在可用区 与 系统镜像 在同一行 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* 所在可用区 */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground flex items-center justify-between">
+                <span>所在可用区 (Availability Zone)</span>
+                {plansLoading && (
+                  <span className="text-muted-foreground text-[10px] flex items-center gap-1">
+                    <Loader2 className="size-2.5 animate-spin" /> 加载中...
                   </span>
-                  {networkType === "dual_stack" && (
-                    <Check className="size-3.5 text-primary shrink-0" />
-                  )}
-                </div>
-                <span className="text-[11px] text-muted-foreground mt-1 leading-normal">
-                  包含公网 IPv4 + IPv6 地址，适合主流网络访问（$5.00/月 起）
-                </span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleNetworkTypeChange("ipv6_only")}
-                className={cn(
-                  "flex flex-col text-left p-3 rounded-lg border transition-all select-none cursor-pointer",
-                  networkType === "ipv6_only"
-                    ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
-                    : "border-border/60 bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                 )}
-              >
-                <div className="flex items-center justify-between font-semibold text-xs">
-                  <span className="text-foreground">IPv6-only (纯 IPv6)</span>
-                  {networkType === "ipv6_only" && (
-                    <Check className="size-3.5 text-primary shrink-0" />
+              </label>
+              <Select value={zone} onValueChange={setZone}>
+                <SelectTrigger size="sm" className="h-7 w-full text-xs px-2.5">
+                  <SelectValue placeholder="选择可用区" />
+                </SelectTrigger>
+                <SelectContent>
+                  {zones.map((z) => (
+                    <SelectItem key={z} value={z} className="text-xs">
+                      {formatZone(z)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 系统镜像 */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground">
+                系统镜像 (Blueprint / OS)
+              </label>
+              <Select value={blueprintId} onValueChange={setBlueprintId}>
+                <SelectTrigger size="sm" className="h-7 w-full text-xs px-2.5">
+                  <SelectValue placeholder="选择系统镜像" />
+                </SelectTrigger>
+                <SelectContent>
+                  {blueprints.map((b) => (
+                    <SelectItem key={b.id} value={b.id} className="text-xs">
+                      {b.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* 网络类型 与 套餐规格 在同一行 */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* 网络类型：紧凑切换控制 */}
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground flex items-center gap-1.5">
+                <Network className="size-3 text-primary" />
+                <span>网络类型 (Networking Type)</span>
+              </label>
+              <div className="grid grid-cols-2 p-0.5 rounded-md bg-muted/50 border border-border/60 h-7 items-center">
+                <button
+                  type="button"
+                  onClick={() => handleNetworkTypeChange("dual_stack")}
+                  className={cn(
+                    "h-6 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
+                    networkType === "dual_stack"
+                      ? "bg-background text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
                   )}
-                </div>
-                <span className="text-[11px] text-muted-foreground mt-1 leading-normal">
-                  仅 IPv6 地址（无 IPv4），起步价格低至 $3.50/月
-                </span>
-              </button>
+                >
+                  {networkType === "dual_stack" && (
+                    <Check className="size-3 text-primary shrink-0" />
+                  )}
+                  <span>双栈 (IPv4 + IPv6)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleNetworkTypeChange("ipv6_only")}
+                  className={cn(
+                    "h-6 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
+                    networkType === "ipv6_only"
+                      ? "bg-background text-foreground shadow-xs font-semibold"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                >
+                  {networkType === "ipv6_only" && (
+                    <Check className="size-3 text-primary shrink-0" />
+                  )}
+                  <span>纯 IPv6 ($3.5/月起)</span>
+                </button>
+              </div>
             </div>
 
             {/* 套餐规格下拉框 */}
-            <div className="space-y-1.5 pt-1">
-              <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
+            <div className="space-y-1">
+              <label className="text-[11px] font-medium text-foreground flex items-center justify-between">
                 <span>
-                  {networkType === "dual_stack" ? "双栈" : "仅 IPv6"} 套餐规格
-                  (Bundle / Specs)
+                  {networkType === "dual_stack" ? "双栈" : "纯 IPv6"} 套餐规格
+                  (Bundle)
                 </span>
                 {plansLoading && (
                   <span className="text-muted-foreground text-[10px] flex items-center gap-1">
-                    <Loader2 className="size-2.5 animate-spin" />{" "}
-                    同步实时价格...
+                    <Loader2 className="size-2.5 animate-spin" /> 同步中...
                   </span>
                 )}
               </label>
               <Select value={bundleId} onValueChange={setBundleId}>
-                <SelectTrigger className="h-8 w-full text-xs">
+                <SelectTrigger size="sm" className="h-7 w-full text-xs px-2.5">
                   <SelectValue placeholder="选择套餐规格" />
                 </SelectTrigger>
                 <SelectContent>
@@ -493,83 +476,43 @@ export function CreateLightsailModal({
             </div>
           </div>
 
-          {/* 自动快照配置 Enable Automatic Snapshots */}
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-3 space-y-2">
-            <label className="flex items-center justify-between cursor-pointer select-none">
-              <div className="flex items-center gap-2">
+          {/* 自动快照与初始化脚本 */}
+          <div className="rounded-md border border-border/60 bg-muted/20 p-2.5 space-y-2">
+            {/* 自动快照配置 */}
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
                 <Checkbox
                   checked={enableAutoSnapshot}
                   onCheckedChange={(checked) =>
                     setEnableAutoSnapshot(Boolean(checked))
                   }
                 />
-                <span className="font-semibold text-foreground text-[11px] flex items-center gap-1">
+                <span className="font-medium text-foreground text-[11px] flex items-center gap-1">
                   <Camera className="size-3 text-muted-foreground" />
-                  启用每日自动快照 (Enable Automatic Snapshots)
+                  启用每日自动快照 (Automatic Snapshots)
                 </span>
-              </div>
-            </label>
-            <p className="text-[10px] text-muted-foreground pl-6">
-              AWS Lightsail 每天将在指定时间自动对服务器系统盘创建增量备份。
-            </p>
-            {enableAutoSnapshot && (
-              <div className="pl-6 pt-1 space-y-1.5">
-                <label className="text-[10px] font-medium text-foreground">
-                  每日快照执行时间 (UTC)
-                </label>
-                <Select value={snapshotTime} onValueChange={setSnapshotTime}>
-                  <SelectTrigger className="h-7 w-full text-xs">
-                    <SelectValue placeholder="选择快照时间" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SNAPSHOT_HOURS.map((h) => (
-                      <SelectItem
-                        key={h.value}
-                        value={h.value}
-                        className="text-xs"
-                      >
-                        {h.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-          </div>
+              </label>
 
-          {/* 初始化脚本与 Termix 代码片段导入 */}
-          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
-            <div className="flex items-center justify-between">
-              <button
-                type="button"
-                onClick={() => setShowUserData(!showUserData)}
-                className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1 cursor-pointer"
-              >
-                <FileCode className="size-3 text-muted-foreground" />
-                {showUserData ? "收起" : "展开"} 启动脚本 (Cloud-init User Data
-                - 选填)
-              </button>
-
-              {snippets.length > 0 && (
+              {enableAutoSnapshot && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    代码片段:
+                    执行时间:
                   </span>
-                  <Select
-                    value={selectedSnippetId}
-                    onValueChange={handleSnippetSelect}
-                  >
-                    <SelectTrigger className="h-6 text-[10px] px-2 w-[160px]">
-                      <SelectValue placeholder="选择 Termix 片段..." />
+                  <Select value={snapshotTime} onValueChange={setSnapshotTime}>
+                    <SelectTrigger
+                      size="sm"
+                      className="h-6 w-[170px] text-[10px] px-2"
+                    >
+                      <SelectValue placeholder="选择快照时间" />
                     </SelectTrigger>
                     <SelectContent>
-                      {snippets.map((s) => (
+                      {SNAPSHOT_HOURS.map((h) => (
                         <SelectItem
-                          key={s.id}
-                          value={String(s.id)}
+                          key={h.value}
+                          value={h.value}
                           className="text-xs"
                         >
-                          {s.name}
+                          {h.label}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -578,29 +521,79 @@ export function CreateLightsailModal({
               )}
             </div>
 
-            {showUserData && (
-              <div className="space-y-1 pt-1">
-                <Textarea
-                  value={userData}
-                  onChange={(e) => setUserData(e.target.value)}
-                  placeholder="#!/bin/bash&#10;# 服务器首次开机执行的脚本&#10;apt update -y"
-                  className="h-28 w-full text-[11px] font-mono"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  支持 Shell 脚本或 cloud-init
-                  配置文件，将在首次开机启动时自动以 root 权限执行。
-                </p>
+            <div className="border-t border-border/40" />
+
+            {/* 初始化脚本与 Termix 代码片段导入 */}
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowUserData(!showUserData)}
+                  className="text-[11px] font-medium text-foreground hover:text-primary flex items-center gap-1 cursor-pointer select-none"
+                >
+                  <FileCode className="size-3 text-muted-foreground" />
+                  <span>
+                    {showUserData ? "收起" : "展开"} 启动脚本 (Cloud-init User
+                    Data - 选填)
+                  </span>
+                </button>
+
+                {snippets.length > 0 && (
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                      代码片段:
+                    </span>
+                    <Select
+                      value={selectedSnippetId}
+                      onValueChange={handleSnippetSelect}
+                    >
+                      <SelectTrigger
+                        size="sm"
+                        className="h-6 text-[10px] px-2 w-[160px]"
+                      >
+                        <SelectValue placeholder="选择 Termix 片段..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {snippets.map((s) => (
+                          <SelectItem
+                            key={s.id}
+                            value={String(s.id)}
+                            className="text-xs"
+                          >
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
-            )}
+
+              {showUserData && (
+                <div className="space-y-1 pt-2">
+                  <Textarea
+                    value={userData}
+                    onChange={(e) => setUserData(e.target.value)}
+                    placeholder="#!/bin/bash&#10;# 服务器首次开机自动执行的脚本&#10;apt update -y"
+                    className="h-20 w-full text-[11px] font-mono resize-none py-1.5 px-2"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    支持 Shell 脚本或 cloud-init 配置文件，首次开机自动以 root
+                    权限执行。
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
 
-          <DialogFooter className="gap-2 pt-2">
+          <DialogFooter className="gap-2 pt-1 sm:justify-end">
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={onClose}
               disabled={loading}
+              className="h-7 text-xs px-3"
             >
               取消
             </Button>
@@ -608,16 +601,16 @@ export function CreateLightsailModal({
               type="submit"
               size="sm"
               disabled={loading}
-              className="gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
+              className="h-7 text-xs px-3 gap-1.5 bg-amber-500 hover:bg-amber-600 text-white"
             >
               {loading ? (
                 <>
-                  <Loader2 className="size-3.5 animate-spin" />
+                  <Loader2 className="size-3 animate-spin" />
                   正在开机...
                 </>
               ) : (
                 <>
-                  <Zap className="size-3.5" />
+                  <Zap className="size-3" />
                   立即创建
                 </>
               )}
