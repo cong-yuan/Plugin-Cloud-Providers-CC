@@ -2,7 +2,13 @@ import type { Request, Response, Router } from "express";
 import { and, eq } from "drizzle-orm";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
 import { getProvider, providers, ProviderError } from "./providers/index.js";
-import { createLightsailInstance, getLightsailPlans } from "./providers/aws.js";
+import {
+  createLightsailInstance,
+  getLightsailPlans,
+  getLightsailPortStates,
+  openLightsailPort,
+  closeLightsailPort,
+} from "./providers/aws.js";
 import type { Credentials } from "./providers/index.js";
 import { SyncError, type AccountRow, type CloudSync } from "./sync.js";
 
@@ -748,8 +754,9 @@ export function registerRoutes(
           availabilityZone,
           blueprintId,
           bundleId,
-          allocateStaticIp,
           userData,
+          enableAutoSnapshot,
+          snapshotTimeOfDay,
         } = req.body ?? {};
         if (
           !instanceName ||
@@ -775,7 +782,11 @@ export function registerRoutes(
           availabilityZone: availabilityZone || undefined,
           blueprintId,
           bundleId,
-          allocateStaticIp: allocateStaticIp !== false,
+          enableAutoSnapshot: Boolean(enableAutoSnapshot),
+          snapshotTimeOfDay:
+            typeof snapshotTimeOfDay === "string"
+              ? snapshotTimeOfDay.trim()
+              : undefined,
           userData:
             typeof userData === "string" && userData.trim()
               ? userData.trim()
@@ -850,6 +861,130 @@ export function registerRoutes(
         }
 
         res.json({ ok: true, port: numPort, targetHostId });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/instances/rules:
+   *   get:
+   *     summary: Get public firewall port rules for a Lightsail instance
+   */
+  router.get(
+    "/accounts/:id/instances/rules",
+    view,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        const instanceId = String(req.query.instanceId || "");
+        if (row.provider !== "aws" || !instanceId.startsWith("lightsail/")) {
+          res.json({ rules: [] });
+          return;
+        }
+        const parts = instanceId.split("/");
+        const region = parts[1] || "us-east-2";
+        const instanceName = parts[2] || parts[parts.length - 1];
+
+        const creds = await sync.credentialsOf(row);
+        const rules = await getLightsailPortStates(
+          ctx.fetch,
+          creds,
+          region,
+          instanceName,
+        );
+        res.json({ rules });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/instances/rules/open:
+   *   post:
+   *     summary: Open a public firewall port rule for a Lightsail instance
+   */
+  router.post(
+    "/accounts/:id/instances/rules/open",
+    manage,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        const { instanceId, fromPort, toPort, protocol, cidrs } =
+          req.body ?? {};
+        if (row.provider !== "aws" || !instanceId?.startsWith("lightsail/")) {
+          res
+            .status(400)
+            .json({ error: "Only Lightsail instances support port rules" });
+          return;
+        }
+        const numFrom = Number(fromPort);
+        if (isNaN(numFrom) || numFrom < 0 || numFrom > 65535) {
+          res.status(400).json({ error: "Invalid port" });
+          return;
+        }
+        const parts = String(instanceId).split("/");
+        const region = parts[1] || "us-east-2";
+        const instanceName = parts[2] || parts[parts.length - 1];
+
+        const creds = await sync.credentialsOf(row);
+        await openLightsailPort(ctx.fetch, creds, region, instanceName, {
+          fromPort: numFrom,
+          toPort: toPort ? Number(toPort) : numFrom,
+          protocol: String(protocol || "tcp").toLowerCase(),
+          cidrs: Array.isArray(cidrs) ? cidrs : undefined,
+        });
+        res.json({ ok: true });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/instances/rules/close:
+   *   post:
+   *     summary: Close a public firewall port rule for a Lightsail instance
+   */
+  router.post(
+    "/accounts/:id/instances/rules/close",
+    manage,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        const { instanceId, fromPort, toPort, protocol, cidrs } =
+          req.body ?? {};
+        if (row.provider !== "aws" || !instanceId?.startsWith("lightsail/")) {
+          res
+            .status(400)
+            .json({ error: "Only Lightsail instances support port rules" });
+          return;
+        }
+        const numFrom = Number(fromPort);
+        if (isNaN(numFrom) || numFrom < 0 || numFrom > 65535) {
+          res.status(400).json({ error: "Invalid port" });
+          return;
+        }
+        const parts = String(instanceId).split("/");
+        const region = parts[1] || "us-east-2";
+        const instanceName = parts[2] || parts[parts.length - 1];
+
+        const creds = await sync.credentialsOf(row);
+        await closeLightsailPort(ctx.fetch, creds, region, instanceName, {
+          fromPort: numFrom,
+          toPort: toPort ? Number(toPort) : numFrom,
+          protocol: String(protocol || "tcp").toLowerCase(),
+          cidrs: Array.isArray(cidrs) ? cidrs : undefined,
+        });
+        res.json({ ok: true });
       } catch (error) {
         fail(res, error);
       }

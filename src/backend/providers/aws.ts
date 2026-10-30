@@ -641,11 +641,11 @@ export const DEFAULT_LIGHTSAIL_BLUEPRINTS = [
   },
 ];
 
-export const DEFAULT_LIGHTSAIL_BUNDLES = [
+export const DEFAULT_DUAL_STACK_BUNDLES = [
   {
     id: "nano_3_0",
-    name: "$3.50/月 - 512 MB 内存, 1 vCPU, 20 GB SSD, 1 TB 流量",
-    price: 3.5,
+    name: "$5.00/月 · 512 MB 内存 / 1 核 / 20 GB SSD / 1 TB 流量",
+    price: 5.0,
     ramGb: 0.5,
     vCpu: 1,
     diskGb: 20,
@@ -653,8 +653,8 @@ export const DEFAULT_LIGHTSAIL_BUNDLES = [
   },
   {
     id: "micro_3_0",
-    name: "$5.00/月 - 1 GB 内存, 1 vCPU, 40 GB SSD, 2 TB 流量 (推荐)",
-    price: 5.0,
+    name: "$7.00/月 · 1 GB 内存 / 1 核 / 40 GB SSD / 2 TB 流量 (推荐)",
+    price: 7.0,
     ramGb: 1.0,
     vCpu: 1,
     diskGb: 40,
@@ -662,8 +662,8 @@ export const DEFAULT_LIGHTSAIL_BUNDLES = [
   },
   {
     id: "small_3_0",
-    name: "$10.00/月 - 2 GB 内存, 1 vCPU, 60 GB SSD, 3 TB 流量 (畅销)",
-    price: 10.0,
+    name: "$12.00/月 · 2 GB 内存 / 1 核 / 60 GB SSD / 3 TB 流量 (畅销)",
+    price: 12.0,
     ramGb: 2.0,
     vCpu: 1,
     diskGb: 60,
@@ -671,8 +671,8 @@ export const DEFAULT_LIGHTSAIL_BUNDLES = [
   },
   {
     id: "medium_3_0",
-    name: "$20.00/月 - 4 GB 内存, 2 vCPU, 80 GB SSD, 4 TB 流量",
-    price: 20.0,
+    name: "$24.00/月 · 4 GB 内存 / 2 核 / 80 GB SSD / 4 TB 流量",
+    price: 24.0,
     ramGb: 4.0,
     vCpu: 2,
     diskGb: 80,
@@ -680,14 +680,94 @@ export const DEFAULT_LIGHTSAIL_BUNDLES = [
   },
   {
     id: "large_3_0",
-    name: "$40.00/月 - 8 GB 内存, 2 vCPU, 160 GB SSD, 5 TB 流量",
+    name: "$44.00/月 · 8 GB 内存 / 2 核 / 160 GB SSD / 5 TB 流量",
+    price: 44.0,
+    ramGb: 8.0,
+    vCpu: 2,
+    diskGb: 160,
+    transferGb: 5000,
+  },
+  {
+    id: "xlarge_3_0",
+    name: "$84.00/月 · 16 GB 内存 / 4 核 / 320 GB SSD / 6 TB 流量",
+    price: 84.0,
+    ramGb: 16.0,
+    vCpu: 4,
+    diskGb: 320,
+    transferGb: 6000,
+  },
+];
+
+export const DEFAULT_IPV6_ONLY_BUNDLES = [
+  {
+    id: "nano_ipv6_3_0",
+    name: "$3.50/月 · 512 MB 内存 / 1 核 / 20 GB SSD / 1 TB 流量",
+    price: 3.5,
+    ramGb: 0.5,
+    vCpu: 1,
+    diskGb: 20,
+    transferGb: 1000,
+  },
+  {
+    id: "micro_ipv6_3_0",
+    name: "$5.00/月 · 1 GB 内存 / 1 核 / 40 GB SSD / 2 TB 流量 (推荐)",
+    price: 5.0,
+    ramGb: 1.0,
+    vCpu: 1,
+    diskGb: 40,
+    transferGb: 2000,
+  },
+  {
+    id: "small_ipv6_3_0",
+    name: "$10.00/月 · 2 GB 内存 / 1 核 / 60 GB SSD / 3 TB 流量 (畅销)",
+    price: 10.0,
+    ramGb: 2.0,
+    vCpu: 1,
+    diskGb: 60,
+    transferGb: 3000,
+  },
+  {
+    id: "medium_ipv6_3_0",
+    name: "$20.00/月 · 4 GB 内存 / 2 核 / 80 GB SSD / 4 TB 流量",
+    price: 20.0,
+    ramGb: 4.0,
+    vCpu: 2,
+    diskGb: 80,
+    transferGb: 4000,
+  },
+  {
+    id: "large_ipv6_3_0",
+    name: "$40.00/月 · 8 GB 内存 / 2 核 / 160 GB SSD / 5 TB 流量",
     price: 40.0,
     ramGb: 8.0,
     vCpu: 2,
     diskGb: 160,
     transferGb: 5000,
   },
+  {
+    id: "xlarge_ipv6_3_0",
+    name: "$80.00/月 · 16 GB 内存 / 4 核 / 320 GB SSD / 6 TB 流量",
+    price: 80.0,
+    ramGb: 16.0,
+    vCpu: 4,
+    diskGb: 320,
+    transferGb: 6000,
+  },
 ];
+
+export const DEFAULT_LIGHTSAIL_BUNDLES = DEFAULT_DUAL_STACK_BUNDLES;
+
+export interface CreateLightsailInput {
+  instanceName: string;
+  region: string;
+  availabilityZone?: string;
+  blueprintId: string;
+  bundleId: string;
+  keyPairName?: string;
+  userData?: string;
+  enableAutoSnapshot?: boolean;
+  snapshotTimeOfDay?: string;
+}
 
 export async function createLightsailInstance(
   fetch: PluginFetch,
@@ -698,14 +778,29 @@ export async function createLightsailInstance(
   const url = `https://lightsail.${region}.amazonaws.com/`;
   const zone = input.availabilityZone || `${region}a`;
 
-  const body = JSON.stringify({
+  const addOns: any[] = [];
+  if (input.enableAutoSnapshot) {
+    addOns.push({
+      addOnType: "AutoSnapshot",
+      autoSnapshotAddOnRequest: {
+        snapshotTimeOfDay: input.snapshotTimeOfDay || "00:00",
+      },
+    });
+  }
+
+  const payload: any = {
     instanceNames: [input.instanceName],
     availabilityZone: zone,
     blueprintId: input.blueprintId,
     bundleId: input.bundleId,
     keyPairName: input.keyPairName || undefined,
     userData: input.userData || undefined,
-  });
+  };
+  if (addOns.length > 0) {
+    payload.addOns = addOns;
+  }
+
+  const body = JSON.stringify(payload);
 
   const headers = signV4({
     method: "POST",
@@ -731,56 +826,144 @@ export async function createLightsailInstance(
     throw new Error(msg);
   }
 
-  if (input.allocateStaticIp) {
-    try {
-      const staticIpName = `${input.instanceName}-ip`;
-      const allocBody = JSON.stringify({ staticIpName });
-      const allocHeaders = signV4({
-        method: "POST",
-        url,
-        region,
-        service: "lightsail",
-        headers: {
-          "content-type": "application/x-amz-json-1.1",
-          "x-amz-target": "Lightsail_20161128.AllocateStaticIp",
-        },
-        body: allocBody,
-        ...keys(creds),
-      });
-      const allocRes = await send(fetch, url, {
-        method: "POST",
-        headers: allocHeaders,
-        body: allocBody,
-      });
-      if (allocRes.ok) {
-        const attachBody = JSON.stringify({
-          staticIpName,
-          instanceName: input.instanceName,
-        });
-        const attachHeaders = signV4({
-          method: "POST",
-          url,
-          region,
-          service: "lightsail",
-          headers: {
-            "content-type": "application/x-amz-json-1.1",
-            "x-amz-target": "Lightsail_20161128.AttachStaticIp",
-          },
-          body: attachBody,
-          ...keys(creds),
-        });
-        await send(fetch, url, {
-          method: "POST",
-          headers: attachHeaders,
-          body: attachBody,
-        });
-      }
-    } catch (e) {
-      console.warn("Could not allocate static IP:", e);
-    }
-  }
-
   return { ok: true, instanceName: input.instanceName };
+}
+
+export interface LightsailPortRule {
+  fromPort: number;
+  toPort: number;
+  protocol: string;
+  cidrs?: string[];
+  ipv6Cidrs?: string[];
+}
+
+export async function getLightsailPortStates(
+  fetch: PluginFetch,
+  creds: Credentials,
+  region: string,
+  instanceName: string,
+): Promise<LightsailPortRule[]> {
+  try {
+    const url = `https://lightsail.${region}.amazonaws.com/`;
+    const body = JSON.stringify({ instanceName });
+    const headers = signV4({
+      method: "POST",
+      url,
+      region,
+      service: "lightsail",
+      headers: {
+        "content-type": "application/x-amz-json-1.1",
+        "x-amz-target": "Lightsail_20161128.GetInstancePortStates",
+      },
+      body,
+      ...keys(creds),
+    });
+
+    const res = await send(fetch, url, { method: "POST", headers, body });
+    if (!res.ok) return [];
+    const json = (await res.json()) as {
+      portStates?: Array<{
+        fromPort?: number;
+        toPort?: number;
+        protocol?: string;
+        cidrs?: string[];
+        ipv6Cidrs?: string[];
+      }>;
+    };
+    return (json.portStates ?? []).map((p) => ({
+      fromPort: p.fromPort ?? 0,
+      toPort: p.toPort ?? p.fromPort ?? 0,
+      protocol: (p.protocol ?? "tcp").toLowerCase(),
+      cidrs: p.cidrs,
+      ipv6Cidrs: p.ipv6Cidrs,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+export async function openLightsailPort(
+  fetch: PluginFetch,
+  creds: Credentials,
+  region: string,
+  instanceName: string,
+  rule: {
+    fromPort: number;
+    toPort?: number;
+    protocol: string;
+    cidrs?: string[];
+  },
+): Promise<boolean> {
+  const url = `https://lightsail.${region}.amazonaws.com/`;
+  const body = JSON.stringify({
+    instanceName,
+    portInfo: {
+      fromPort: rule.fromPort,
+      toPort: rule.toPort ?? rule.fromPort,
+      protocol: rule.protocol,
+      cidrs: rule.cidrs && rule.cidrs.length > 0 ? rule.cidrs : ["0.0.0.0/0"],
+    },
+  });
+  const headers = signV4({
+    method: "POST",
+    url,
+    region,
+    service: "lightsail",
+    headers: {
+      "content-type": "application/x-amz-json-1.1",
+      "x-amz-target": "Lightsail_20161128.OpenInstancePublicPorts",
+    },
+    body,
+    ...keys(creds),
+  });
+  const res = await send(fetch, url, { method: "POST", headers, body });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Open port failed: ${errText}`);
+  }
+  return true;
+}
+
+export async function closeLightsailPort(
+  fetch: PluginFetch,
+  creds: Credentials,
+  region: string,
+  instanceName: string,
+  rule: {
+    fromPort: number;
+    toPort?: number;
+    protocol: string;
+    cidrs?: string[];
+  },
+): Promise<boolean> {
+  const url = `https://lightsail.${region}.amazonaws.com/`;
+  const body = JSON.stringify({
+    instanceName,
+    portInfo: {
+      fromPort: rule.fromPort,
+      toPort: rule.toPort ?? rule.fromPort,
+      protocol: rule.protocol,
+      cidrs: rule.cidrs && rule.cidrs.length > 0 ? rule.cidrs : ["0.0.0.0/0"],
+    },
+  });
+  const headers = signV4({
+    method: "POST",
+    url,
+    region,
+    service: "lightsail",
+    headers: {
+      "content-type": "application/x-amz-json-1.1",
+      "x-amz-target": "Lightsail_20161128.CloseInstancePublicPorts",
+    },
+    body,
+    ...keys(creds),
+  });
+  const res = await send(fetch, url, { method: "POST", headers, body });
+  if (!res.ok) {
+    const errText = await res.text();
+    throw new Error(`Close port failed: ${errText}`);
+  }
+  return true;
 }
 
 export async function getLightsailPlans(
@@ -789,7 +972,8 @@ export async function getLightsailPlans(
   region: string,
 ): Promise<{
   blueprints: typeof DEFAULT_LIGHTSAIL_BLUEPRINTS;
-  bundles: typeof DEFAULT_LIGHTSAIL_BUNDLES;
+  dualStackBundles: typeof DEFAULT_DUAL_STACK_BUNDLES;
+  ipv6OnlyBundles: typeof DEFAULT_IPV6_ONLY_BUNDLES;
   zones: string[];
 }> {
   const fallbackZones = [`${region}a`, `${region}b`, `${region}c`];
@@ -828,15 +1012,90 @@ export async function getLightsailPlans(
       }
     }
 
+    let dualStackBundles = DEFAULT_DUAL_STACK_BUNDLES;
+    let ipv6OnlyBundles = DEFAULT_IPV6_ONLY_BUNDLES;
+
+    try {
+      const bundleBody = JSON.stringify({ includeInactive: false });
+      const bundleHeaders = signV4({
+        method: "POST",
+        url,
+        region,
+        service: "lightsail",
+        headers: {
+          "content-type": "application/x-amz-json-1.1",
+          "x-amz-target": "Lightsail_20161128.GetBundles",
+        },
+        body: bundleBody,
+        ...keys(creds),
+      });
+      const bundleRes = await send(fetch, url, {
+        method: "POST",
+        headers: bundleHeaders,
+        body: bundleBody,
+      });
+      if (bundleRes.ok) {
+        const bundleJson = (await bundleRes.json()) as {
+          bundles?: any[];
+        };
+        if (bundleJson.bundles && bundleJson.bundles.length > 0) {
+          const linuxBundles = bundleJson.bundles.filter(
+            (b) =>
+              b.isActive !== false &&
+              Array.isArray(b.supportedPlatforms) &&
+              b.supportedPlatforms.includes("LINUX_UNIX") &&
+              !b.bundleId.startsWith("m_") &&
+              !b.bundleId.startsWith("c_"),
+          );
+          const dual: typeof DEFAULT_DUAL_STACK_BUNDLES = [];
+          const ipv6: typeof DEFAULT_IPV6_ONLY_BUNDLES = [];
+
+          for (const b of linuxBundles) {
+            const isIpv6 = b.bundleId.includes("ipv6");
+            const ramStr =
+              b.ramSizeInGb >= 1
+                ? `${b.ramSizeInGb} GB`
+                : `${b.ramSizeInGb * 1024} MB`;
+            const tfGb = b.transferPerMonthInGb || 0;
+            const tfStr =
+              tfGb >= 1000
+                ? `${(tfGb / 1000).toFixed(tfGb % 1000 === 0 ? 0 : 1)} TB`
+                : `${tfGb} GB`;
+            const item = {
+              id: b.bundleId,
+              name: `$${Number(b.price).toFixed(2)}/月 · ${ramStr} 内存 / ${b.cpuCount || 1} 核 / ${b.diskSizeInGb} GB SSD / ${tfStr} 流量`,
+              price: b.price,
+              ramGb: b.ramSizeInGb,
+              vCpu: b.cpuCount || 1,
+              diskGb: b.diskSizeInGb,
+              transferGb: tfGb,
+            };
+            if (isIpv6) {
+              ipv6.push(item);
+            } else {
+              dual.push(item);
+            }
+          }
+
+          dual.sort((a, b) => a.price - b.price);
+          ipv6.sort((a, b) => a.price - b.price);
+          if (dual.length > 0) dualStackBundles = dual;
+          if (ipv6.length > 0) ipv6OnlyBundles = ipv6;
+        }
+      }
+    } catch {}
+
     return {
       blueprints: DEFAULT_LIGHTSAIL_BLUEPRINTS,
-      bundles: DEFAULT_LIGHTSAIL_BUNDLES,
+      dualStackBundles,
+      ipv6OnlyBundles,
       zones,
     };
   } catch {
     return {
       blueprints: DEFAULT_LIGHTSAIL_BLUEPRINTS,
-      bundles: DEFAULT_LIGHTSAIL_BUNDLES,
+      dualStackBundles: DEFAULT_DUAL_STACK_BUNDLES,
+      ipv6OnlyBundles: DEFAULT_IPV6_ONLY_BUNDLES,
       zones: fallbackZones,
     };
   }

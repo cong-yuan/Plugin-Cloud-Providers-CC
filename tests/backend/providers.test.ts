@@ -4,6 +4,9 @@ import { getProvider } from "../../src/backend/providers/index.js";
 import {
   createLightsailInstance,
   formatAwsZone,
+  getLightsailPortStates,
+  openLightsailPort,
+  closeLightsailPort,
 } from "../../src/backend/providers/aws.js";
 import { ProviderError } from "../../src/backend/providers/types.js";
 import { fakeFetch, json, status, xml } from "./fake-fetch.js";
@@ -425,22 +428,12 @@ describe("aws", () => {
     expect(formatAwsZone("fra1")).toBe("fra1");
   });
 
-  it("calls Lightsail CreateInstances and AllocateStaticIp via API", async () => {
+  it("calls Lightsail CreateInstances with automatic snapshots via API", async () => {
     let createBody: any = null;
-    let allocBody: any = null;
-    let attachBody: any = null;
     const fetch = fakeFetch((url, init) => {
       const target = init.headers["x-amz-target"];
       if (target === "Lightsail_20161128.CreateInstances") {
         createBody = JSON.parse(init.body);
-        return json({ operations: [{ status: "Started" }] });
-      }
-      if (target === "Lightsail_20161128.AllocateStaticIp") {
-        allocBody = JSON.parse(init.body);
-        return json({ operations: [{ status: "Started" }] });
-      }
-      if (target === "Lightsail_20161128.AttachStaticIp") {
-        attachBody = JSON.parse(init.body);
         return json({ operations: [{ status: "Started" }] });
       }
       return json({});
@@ -455,7 +448,8 @@ describe("aws", () => {
         availabilityZone: "us-east-2a",
         blueprintId: "debian_12",
         bundleId: "micro_3_0",
-        allocateStaticIp: true,
+        enableAutoSnapshot: true,
+        snapshotTimeOfDay: "00:00",
       },
     );
 
@@ -465,12 +459,67 @@ describe("aws", () => {
       availabilityZone: "us-east-2a",
       blueprintId: "debian_12",
       bundleId: "micro_3_0",
+      addOns: [
+        {
+          addOnType: "AutoSnapshot",
+          autoSnapshotAddOnRequest: {
+            snapshotTimeOfDay: "00:00",
+          },
+        },
+      ],
     });
-    expect(allocBody).toEqual({ staticIpName: "test-lightsail-ip" });
-    expect(attachBody).toEqual({
-      staticIpName: "test-lightsail-ip",
-      instanceName: "test-lightsail",
+  });
+
+  it("queries and modifies Lightsail firewall port rules", async () => {
+    let openBody: any = null;
+    let closeBody: any = null;
+    const fetch = fakeFetch((url, init) => {
+      const target = init.headers["x-amz-target"];
+      if (target === "Lightsail_20161128.GetInstancePortStates") {
+        return json({
+          portStates: [
+            { fromPort: 22, toPort: 22, protocol: "tcp", cidrs: ["0.0.0.0/0"] },
+            { fromPort: 80, toPort: 80, protocol: "tcp", cidrs: ["0.0.0.0/0"] },
+          ],
+        });
+      }
+      if (target === "Lightsail_20161128.OpenInstancePublicPorts") {
+        openBody = JSON.parse(init.body);
+        return json({ operation: { status: "Started" } });
+      }
+      if (target === "Lightsail_20161128.CloseInstancePublicPorts") {
+        closeBody = JSON.parse(init.body);
+        return json({ operation: { status: "Started" } });
+      }
+      return json({});
     });
+
+    const states = await getLightsailPortStates(
+      fetch,
+      { accessKeyId: "AK", secretAccessKey: "SK" },
+      "us-east-2",
+      "test-instance",
+    );
+    expect(states).toHaveLength(2);
+    expect(states[0].fromPort).toBe(22);
+
+    await openLightsailPort(
+      fetch,
+      { accessKeyId: "AK", secretAccessKey: "SK" },
+      "us-east-2",
+      "test-instance",
+      { fromPort: 443, toPort: 443, protocol: "tcp", cidrs: ["0.0.0.0/0"] },
+    );
+    expect(openBody.portInfo.fromPort).toBe(443);
+
+    await closeLightsailPort(
+      fetch,
+      { accessKeyId: "AK", secretAccessKey: "SK" },
+      "us-east-2",
+      "test-instance",
+      { fromPort: 80, toPort: 80, protocol: "tcp" },
+    );
+    expect(closeBody.portInfo.fromPort).toBe(80);
   });
 });
 

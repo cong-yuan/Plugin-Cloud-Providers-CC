@@ -85,6 +85,21 @@ export interface Instance {
   details?: InstanceDetails;
 }
 
+export interface PortRule {
+  fromPort: number;
+  toPort: number;
+  protocol: string;
+  cidrs?: string[];
+  ipv6Cidrs?: string[];
+}
+
+export interface TermixSnippet {
+  id: number;
+  name: string;
+  content: string;
+  description?: string | null;
+}
+
 export interface CreateLightsailInput {
   instanceName: string;
   region?: string;
@@ -93,7 +108,8 @@ export interface CreateLightsailInput {
   bundleId: string;
   keyPairName?: string;
   userData?: string;
-  allocateStaticIp?: boolean;
+  enableAutoSnapshot?: boolean;
+  snapshotTimeOfDay?: string;
 }
 
 export interface LightsailBlueprint {
@@ -115,7 +131,8 @@ export interface LightsailBundle {
 
 export interface LightsailPlansResponse {
   blueprints: LightsailBlueprint[];
-  bundles: LightsailBundle[];
+  dualStackBundles: LightsailBundle[];
+  ipv6OnlyBundles: LightsailBundle[];
   zones: string[];
 }
 
@@ -206,6 +223,45 @@ export function createApi(api: PluginApiClient) {
           { instanceId, port },
         ),
       ),
+    getInstanceRules: (id: number, instanceId: string) =>
+      data(
+        api.get<{ rules: PortRule[] }>(
+          `/accounts/${id}/instances/rules?instanceId=${encodeURIComponent(instanceId)}`,
+        ),
+      ).then((r) => r.rules),
+    openInstanceRule: (
+      id: number,
+      rule: {
+        instanceId: string;
+        fromPort: number;
+        toPort?: number;
+        protocol: string;
+        cidrs?: string[];
+      },
+    ) =>
+      data(
+        api.post<{ ok: boolean }>(`/accounts/${id}/instances/rules/open`, rule),
+      ),
+    closeInstanceRule: (
+      id: number,
+      rule: {
+        instanceId: string;
+        fromPort: number;
+        toPort?: number;
+        protocol: string;
+        cidrs?: string[];
+      },
+    ) =>
+      data(
+        api.post<{ ok: boolean }>(
+          `/accounts/${id}/instances/rules/close`,
+          rule,
+        ),
+      ),
+    getSnippets: () =>
+      fetch("/plugin-api/snippets")
+        .then((r) => (r.ok ? r.json() : []))
+        .catch(() => [] as TermixSnippet[]),
   };
 }
 

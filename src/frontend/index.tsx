@@ -16,6 +16,7 @@ import {
   Plus,
   RefreshCw,
   Server,
+  Shield,
   Terminal,
   Trash2,
   Wifi,
@@ -45,6 +46,7 @@ import {
   type Account,
   type AccountInput,
   type Instance,
+  type PortRule,
   type ProviderInfo,
   type SavedCredential,
 } from "./api";
@@ -375,44 +377,136 @@ function CloudTab({ isVisible }: TabProps) {
   const [expandedDetailIds, setExpandedDetailIds] = useState<Set<string>>(
     new Set(),
   );
-  const [editPorts, setEditPorts] = useState<Record<string, number>>({});
-  const [savingPortId, setSavingPortId] = useState<string | null>(null);
 
-  function toggleDetail(instanceId: string) {
-    setExpandedDetailIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(instanceId)) next.delete(instanceId);
-      else next.add(instanceId);
-      return next;
-    });
+  // Firewall rules state
+  const [instanceRules, setInstanceRules] = useState<
+    Record<string, PortRule[]>
+  >({});
+  const [loadingRules, setLoadingRules] = useState<Record<string, boolean>>({});
+  const [addingRuleInstanceId, setAddingRuleInstanceId] = useState<
+    string | null
+  >(null);
+  const [newRuleProtocol, setNewRuleProtocol] = useState<string>("tcp");
+  const [newRuleFromPort, setNewRuleFromPort] = useState<string>("");
+  const [newRuleToPort, setNewRuleToPort] = useState<string>("");
+  const [newRuleCidr, setNewRuleCidr] = useState<string>("");
+  const [ruleOperating, setRuleOperating] = useState<Record<string, boolean>>(
+    {},
+  );
+
+  function getCommonPortName(
+    fromPort: number,
+    toPort: number,
+    protocol: string,
+  ): string | null {
+    const proto = protocol.toLowerCase();
+    if (proto === "tcp") {
+      if (fromPort === 22 && toPort === 22) return "SSH (远程连接)";
+      if (fromPort === 80 && toPort === 80) return "HTTP (Web)";
+      if (fromPort === 443 && toPort === 443) return "HTTPS (Web 安全)";
+      if (fromPort === 3306 && toPort === 3306) return "MySQL";
+      if (fromPort === 5432 && toPort === 5432) return "PostgreSQL";
+      if (fromPort === 6379 && toPort === 6379) return "Redis";
+      if (fromPort === 8080 && toPort === 8080) return "HTTP-Alt (8080)";
+      if (fromPort === 3000 && toPort === 3000) return "Web App (3000)";
+      if (fromPort === 8888 && toPort === 8888) return "宝塔 / 面板 (8888)";
+    }
+    if (proto === "icmp") return "Ping (ICMP)";
+    if (fromPort === 0 && toPort === 65535) return "全部端口开放";
+    return null;
   }
 
-  async function handleSavePort(account: Account, instance: Instance) {
-    const portToSave = editPorts[instance.id] ?? instance.port ?? 22;
-    if (isNaN(portToSave) || portToSave < 1 || portToSave > 65535) {
-      toast.error("无效的端口号，请输入 1-65535 之间的数字");
+  async function loadRules(accountId: number, instanceId: string) {
+    setLoadingRules((prev) => ({ ...prev, [instanceId]: true }));
+    try {
+      const rules = await api.getInstanceRules(accountId, instanceId);
+      setInstanceRules((prev) => ({ ...prev, [instanceId]: rules }));
+    } catch (err) {
+      console.error("Failed to load instance rules:", err);
+    } finally {
+      setLoadingRules((prev) => ({ ...prev, [instanceId]: false }));
+    }
+  }
+
+  async function handleAddRule(account: Account, instance: Instance) {
+    const from = parseInt(newRuleFromPort);
+    if (isNaN(from) || from < 0 || from > 65535) {
+      toast.error("请输入有效的起始端口号 (0-65535)");
+      return;
+    }
+    const to = newRuleToPort ? parseInt(newRuleToPort) : from;
+    if (isNaN(to) || to < from || to > 65535) {
+      toast.error("结束端口号必须大于等于起始端口号 (0-65535)");
       return;
     }
 
-    setSavingPortId(instance.id);
+    const opKey = `${instance.id}-add`;
+    setRuleOperating((prev) => ({ ...prev, [opKey]: true }));
     try {
-      await api.updatePort(account.id, instance.id, portToSave);
-      toast.success(`已保存 ${instance.name} SSH 端口为 ${portToSave}`);
-      try {
-        notifyHostsChanged();
-      } catch {}
-
-      setAccountInstances((prev) => ({
-        ...prev,
-        [account.id]: (prev[account.id] || []).map((i) =>
-          i.id === instance.id ? { ...i, port: portToSave } : i,
-        ),
-      }));
+      await api.openInstanceRule(account.id, {
+        instanceId: instance.id,
+        fromPort: from,
+        toPort: to,
+        protocol: newRuleProtocol,
+        cidrs: newRuleCidr.trim() ? [newRuleCidr.trim()] : ["0.0.0.0/0"],
+      });
+      toast.success(
+        `成功开放端口规则 ${newRuleProtocol.toUpperCase()} ${from === to ? from : `${from}-${to}`}`,
+      );
+      setAddingRuleInstanceId(null);
+      setNewRuleFromPort("");
+      setNewRuleToPort("");
+      setNewRuleCidr("");
+      await loadRules(account.id, instance.id);
     } catch (err) {
       toast.error(errorMessage(err));
     } finally {
-      setSavingPortId(null);
+      setRuleOperating((prev) => ({ ...prev, [opKey]: false }));
     }
+  }
+
+  async function handleDeleteRule(
+    account: Account,
+    instance: Instance,
+    rule: PortRule,
+  ) {
+    const ruleDisplay = `${rule.protocol.toUpperCase()} ${rule.fromPort === rule.toPort ? rule.fromPort : `${rule.fromPort}-${rule.toPort}`}`;
+    const opKey = `${instance.id}-del-${rule.protocol}-${rule.fromPort}-${rule.toPort}`;
+    setRuleOperating((prev) => ({ ...prev, [opKey]: true }));
+    try {
+      await api.closeInstanceRule(account.id, {
+        instanceId: instance.id,
+        fromPort: rule.fromPort,
+        toPort: rule.toPort,
+        protocol: rule.protocol,
+        cidrs: rule.cidrs,
+      });
+      toast.success(`已删除端口规则 ${ruleDisplay}`);
+      await loadRules(account.id, instance.id);
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setRuleOperating((prev) => ({ ...prev, [opKey]: false }));
+    }
+  }
+
+  function toggleDetail(instance: Instance, account: Account) {
+    setExpandedDetailIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(instance.id)) {
+        next.delete(instance.id);
+      } else {
+        next.add(instance.id);
+        if (
+          (account.provider === "aws" ||
+            instance.id.startsWith("lightsail/")) &&
+          !instanceRules[instance.id]
+        ) {
+          void loadRules(account.id, instance.id);
+        }
+      }
+      return next;
+    });
   }
 
   const reload = useCallback(async () => {
@@ -951,7 +1045,7 @@ function CloudTab({ isVisible }: TabProps) {
                                     ? "收起详情"
                                     : "服务器详情"
                                 }
-                                onClick={() => toggleDetail(instance.id)}
+                                onClick={() => toggleDetail(instance, account)}
                               >
                                 <Info
                                   className={cn(
@@ -1037,52 +1131,22 @@ function CloudTab({ isVisible }: TabProps) {
                             </div>
 
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
-                              {/* 1. SSH 端口配置 */}
+                              {/* 1. SSH 登录配置 */}
                               <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
                                 <div className="font-medium text-foreground flex items-center justify-between">
                                   <span className="flex items-center gap-1.5">
                                     <Terminal className="size-3 text-muted-foreground" />
-                                    SSH 端口配置
+                                    SSH 登录配置
                                   </span>
                                 </div>
-                                <div className="space-y-2 text-[11px]">
-                                  <div className="flex items-center justify-between gap-2">
-                                    <span className="text-muted-foreground shrink-0">
+                                <div className="space-y-1.5 text-[11px]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">
                                       SSH 端口:
                                     </span>
-                                    <div className="flex items-center gap-1.5">
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        max="65535"
-                                        value={
-                                          editPorts[instance.id] ??
-                                          instance.port ??
-                                          22
-                                        }
-                                        onChange={(e) =>
-                                          setEditPorts((prev) => ({
-                                            ...prev,
-                                            [instance.id]:
-                                              parseInt(e.target.value) || 22,
-                                          }))
-                                        }
-                                        className="w-16 h-6 px-1.5 py-0.5 font-mono text-[11px] rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary text-right"
-                                      />
-                                      <Button
-                                        size="xs"
-                                        variant="outline"
-                                        className="h-6 px-2 text-[11px]"
-                                        disabled={savingPortId === instance.id}
-                                        onClick={() =>
-                                          void handleSavePort(account, instance)
-                                        }
-                                      >
-                                        {savingPortId === instance.id
-                                          ? "保存中..."
-                                          : "保存端口"}
-                                      </Button>
-                                    </div>
+                                    <code className="font-mono text-foreground font-semibold">
+                                      {instance.port || 22}
+                                    </code>
                                   </div>
                                   <div className="flex items-center justify-between">
                                     <span className="text-muted-foreground">
@@ -1217,6 +1281,286 @@ function CloudTab({ isVisible }: TabProps) {
                                 </div>
                               </div>
                             </div>
+
+                            {/* 4. 防火墙端口规则 (Lightsail / Cloud Firewall Rules) */}
+                            {(isLightsail || account.provider === "aws") && (
+                              <div className="p-3 rounded-lg bg-background/80 border border-border/40 space-y-2.5">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <Shield className="size-3.5 text-primary" />
+                                    <span className="font-semibold text-foreground text-xs">
+                                      防火墙端口规则 (Firewall Rules)
+                                    </span>
+                                    {instanceRules[instance.id] && (
+                                      <span className="text-[10px] text-muted-foreground bg-muted px-1.5 py-0.5 rounded font-mono">
+                                        {instanceRules[instance.id].length}{" "}
+                                        条规则
+                                      </span>
+                                    )}
+                                  </div>
+                                  <div className="flex items-center gap-1.5">
+                                    <Button
+                                      size="xs"
+                                      variant="ghost"
+                                      className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+                                      title="刷新规则"
+                                      onClick={() =>
+                                        void loadRules(account.id, instance.id)
+                                      }
+                                      disabled={loadingRules[instance.id]}
+                                    >
+                                      <RefreshCw
+                                        className={cn(
+                                          "size-3",
+                                          loadingRules[instance.id] &&
+                                            "animate-spin",
+                                        )}
+                                      />
+                                    </Button>
+                                    <Button
+                                      size="xs"
+                                      variant="outline"
+                                      className="h-6 px-2 text-[11px] gap-1 border-primary/30 text-primary hover:bg-primary/10"
+                                      onClick={() => {
+                                        if (
+                                          addingRuleInstanceId === instance.id
+                                        ) {
+                                          setAddingRuleInstanceId(null);
+                                        } else {
+                                          setAddingRuleInstanceId(instance.id);
+                                          setNewRuleProtocol("tcp");
+                                          setNewRuleFromPort("");
+                                          setNewRuleToPort("");
+                                          setNewRuleCidr("");
+                                        }
+                                      }}
+                                    >
+                                      <Plus className="size-3" />
+                                      {addingRuleInstanceId === instance.id
+                                        ? "取消"
+                                        : "添加端口规则"}
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {/* 新增规则表单 */}
+                                {addingRuleInstanceId === instance.id && (
+                                  <div className="p-2.5 rounded bg-muted/40 border border-border/60 space-y-2 animate-in fade-in-50 duration-150">
+                                    <div className="text-[11px] font-medium text-foreground">
+                                      新增公网开放端口
+                                    </div>
+                                    <div className="flex flex-wrap items-center gap-2 text-xs">
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[11px] text-muted-foreground">
+                                          协议:
+                                        </span>
+                                        <select
+                                          value={newRuleProtocol}
+                                          onChange={(e) =>
+                                            setNewRuleProtocol(e.target.value)
+                                          }
+                                          className="h-7 px-2 text-xs rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                        >
+                                          <option value="tcp">TCP</option>
+                                          <option value="udp">UDP</option>
+                                          <option value="all">
+                                            ALL (全部)
+                                          </option>
+                                          <option value="icmp">
+                                            ICMP (Ping)
+                                          </option>
+                                        </select>
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[11px] text-muted-foreground">
+                                          端口:
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="65535"
+                                          placeholder="起始端口 (如 80)"
+                                          value={newRuleFromPort}
+                                          onChange={(e) =>
+                                            setNewRuleFromPort(e.target.value)
+                                          }
+                                          className="w-24 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                        <span className="text-muted-foreground">
+                                          -
+                                        </span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          max="65535"
+                                          placeholder="结束端口 (可选)"
+                                          value={newRuleToPort}
+                                          onChange={(e) =>
+                                            setNewRuleToPort(e.target.value)
+                                          }
+                                          className="w-24 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                      </div>
+
+                                      <div className="flex items-center gap-1">
+                                        <span className="text-[11px] text-muted-foreground">
+                                          来源:
+                                        </span>
+                                        <input
+                                          type="text"
+                                          placeholder="默认 0.0.0.0/0 (任意 IP)"
+                                          value={newRuleCidr}
+                                          onChange={(e) =>
+                                            setNewRuleCidr(e.target.value)
+                                          }
+                                          className="w-36 h-7 px-2 text-xs font-mono rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                      </div>
+
+                                      <Button
+                                        size="xs"
+                                        className="h-7 px-3 text-xs gap-1"
+                                        disabled={
+                                          ruleOperating[`${instance.id}-add`] ||
+                                          !newRuleFromPort
+                                        }
+                                        onClick={() =>
+                                          void handleAddRule(account, instance)
+                                        }
+                                      >
+                                        {ruleOperating[`${instance.id}-add`] ? (
+                                          <>
+                                            <Loader2 className="size-3 animate-spin" />
+                                            正在开放...
+                                          </>
+                                        ) : (
+                                          "确认开放"
+                                        )}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* 规则列表展示 */}
+                                {loadingRules[instance.id] &&
+                                !instanceRules[instance.id] ? (
+                                  <div className="flex items-center gap-2 py-3 px-2 text-xs text-muted-foreground">
+                                    <Loader2 className="size-3.5 animate-spin text-primary" />
+                                    <span>正在获取防火墙端口规则...</span>
+                                  </div>
+                                ) : !instanceRules[instance.id] ||
+                                  instanceRules[instance.id].length === 0 ? (
+                                  <div className="py-2 px-1 text-[11px] text-muted-foreground">
+                                    暂无开放的公网端口规则。点击「添加端口规则」开放所需服务端口。
+                                  </div>
+                                ) : (
+                                  <div className="border border-border/40 rounded overflow-hidden">
+                                    <table className="w-full text-left text-[11px]">
+                                      <thead className="bg-muted/50 text-muted-foreground border-b border-border/40 font-medium">
+                                        <tr>
+                                          <th className="py-1.5 px-2.5">
+                                            应用 / 类型
+                                          </th>
+                                          <th className="py-1.5 px-2.5">
+                                            协议
+                                          </th>
+                                          <th className="py-1.5 px-2.5">
+                                            端口范围
+                                          </th>
+                                          <th className="py-1.5 px-2.5">
+                                            来源限制
+                                          </th>
+                                          <th className="py-1.5 px-2.5 text-right">
+                                            操作
+                                          </th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-border/30 font-mono">
+                                        {instanceRules[instance.id].map(
+                                          (rule, rIdx) => {
+                                            const appName = getCommonPortName(
+                                              rule.fromPort,
+                                              rule.toPort,
+                                              rule.protocol,
+                                            );
+                                            const delKey = `${instance.id}-del-${rule.protocol}-${rule.fromPort}-${rule.toPort}`;
+                                            const isDeleting =
+                                              ruleOperating[delKey];
+                                            return (
+                                              <tr
+                                                key={`${rule.protocol}-${rule.fromPort}-${rule.toPort}-${rIdx}`}
+                                                className="hover:bg-muted/30"
+                                              >
+                                                <td className="py-1.5 px-2.5 font-sans">
+                                                  {appName ? (
+                                                    <span className="font-medium text-foreground">
+                                                      {appName}
+                                                    </span>
+                                                  ) : (
+                                                    <span className="text-muted-foreground">
+                                                      自定义
+                                                    </span>
+                                                  )}
+                                                </td>
+                                                <td className="py-1.5 px-2.5">
+                                                  <span
+                                                    className={cn(
+                                                      "px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase",
+                                                      rule.protocol === "tcp"
+                                                        ? "bg-blue-500/10 text-blue-500 border border-blue-500/20"
+                                                        : rule.protocol ===
+                                                            "udp"
+                                                          ? "bg-purple-500/10 text-purple-500 border border-purple-500/20"
+                                                          : "bg-amber-500/10 text-amber-500 border border-amber-500/20",
+                                                    )}
+                                                  >
+                                                    {rule.protocol}
+                                                  </span>
+                                                </td>
+                                                <td className="py-1.5 px-2.5 text-foreground font-semibold">
+                                                  {rule.fromPort === rule.toPort
+                                                    ? rule.fromPort
+                                                    : `${rule.fromPort} - ${rule.toPort}`}
+                                                </td>
+                                                <td className="py-1.5 px-2.5 text-muted-foreground">
+                                                  {rule.cidrs &&
+                                                  rule.cidrs.length > 0
+                                                    ? rule.cidrs.join(", ")
+                                                    : "0.0.0.0/0 (任意 IPv4)"}
+                                                </td>
+                                                <td className="py-1.5 px-2.5 text-right font-sans">
+                                                  <Button
+                                                    size="xs"
+                                                    variant="ghost"
+                                                    className="h-5 px-1.5 text-[10px] text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+                                                    disabled={isDeleting}
+                                                    onClick={() =>
+                                                      void handleDeleteRule(
+                                                        account,
+                                                        instance,
+                                                        rule,
+                                                      )
+                                                    }
+                                                    title="关闭该端口"
+                                                  >
+                                                    {isDeleting ? (
+                                                      <Loader2 className="size-2.5 animate-spin" />
+                                                    ) : (
+                                                      <Trash2 className="size-2.5 text-destructive" />
+                                                    )}
+                                                  </Button>
+                                                </td>
+                                              </tr>
+                                            );
+                                          },
+                                        )}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
