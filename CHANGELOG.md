@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.7
+
+### Changed
+
+- feat: support creating lightsail instances, show availability zones and server details with editable port
+
 ## 1.1.6
 
 ### Changed
