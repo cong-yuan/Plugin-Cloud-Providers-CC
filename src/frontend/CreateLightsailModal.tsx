@@ -203,7 +203,7 @@ export function CreateLightsailModal({
 
   // User Data & Termix Snippets
   const [userData, setUserData] = useState("");
-  const [showUserData, setShowUserData] = useState(false);
+  const [showUserData, setShowUserData] = useState(true);
   const [snippets, setSnippets] = useState<TermixSnippet[]>([]);
   const [selectedSnippetId, setSelectedSnippetId] = useState<string>("");
 
@@ -230,7 +230,7 @@ export function CreateLightsailModal({
     setBundleId("micro_3_0");
     setEnableAutoSnapshot(false);
     setUserData("");
-    setShowUserData(false);
+    setShowUserData(true);
     setSelectedSnippetId("");
 
     let active = true;
@@ -506,9 +506,8 @@ export function CreateLightsailModal({
             />
           </div>
 
-          {/* 4. 自动快照与初始化脚本 */}
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2">
-            {/* 自动快照配置 */}
+          {/* 4. 自动每日快照 (独立模块，时间选择默认渲染常驻，勾选时仅切换启用状态，不引起页面重排) */}
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
             <div className="flex items-center justify-between gap-2">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <Checkbox
@@ -523,28 +522,88 @@ export function CreateLightsailModal({
                 </span>
               </label>
 
-              {enableAutoSnapshot && (
+              <div
+                className={cn(
+                  "flex items-center gap-1.5 shrink-0 transition-opacity",
+                  enableAutoSnapshot
+                    ? "opacity-100"
+                    : "opacity-40 pointer-events-none",
+                )}
+              >
+                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
+                  {t("lightsail.snapshotTime")}
+                </span>
+                <Select
+                  value={snapshotTime}
+                  onValueChange={setSnapshotTime}
+                  disabled={!enableAutoSnapshot}
+                >
+                  <SelectTrigger
+                    size="sm"
+                    className="h-6.5 w-[170px] text-[10px] px-2"
+                  >
+                    <SelectValue
+                      placeholder={t("lightsail.snapshotTimePlaceholder")}
+                    />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {SNAPSHOT_HOURS.map((h) => (
+                      <SelectItem
+                        key={h.value}
+                        value={h.value}
+                        className="text-xs"
+                      >
+                        {h.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </div>
+
+          {/* 5. 启动脚本 (与快照分开，默认展开) */}
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <button
+                type="button"
+                onClick={() => setShowUserData(!showUserData)}
+                className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1.5 cursor-pointer select-none"
+              >
+                <FileCode className="size-3.5 text-muted-foreground" />
+                <span>
+                  {showUserData
+                    ? t("lightsail.collapseScript")
+                    : t("lightsail.expandScript")}{" "}
+                  {t("lightsail.launchScript")}
+                </span>
+              </button>
+
+              {snippets.length > 0 && (
                 <div className="flex items-center gap-1.5 shrink-0">
                   <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    {t("lightsail.snapshotTime")}
+                    {t("lightsail.snippet")}
                   </span>
-                  <Select value={snapshotTime} onValueChange={setSnapshotTime}>
+                  <Select
+                    value={selectedSnippetId}
+                    onValueChange={handleSnippetSelect}
+                  >
                     <SelectTrigger
                       size="sm"
-                      className="h-6 w-[170px] text-[10px] px-2"
+                      className="h-6 text-[10px] px-2 w-[160px]"
                     >
                       <SelectValue
-                        placeholder={t("lightsail.snapshotTimePlaceholder")}
+                        placeholder={t("lightsail.snippetPlaceholder")}
                       />
                     </SelectTrigger>
                     <SelectContent>
-                      {SNAPSHOT_HOURS.map((h) => (
+                      {snippets.map((s) => (
                         <SelectItem
-                          key={h.value}
-                          value={h.value}
+                          key={s.id}
+                          value={String(s.id)}
                           className="text-xs"
                         >
-                          {h.label}
+                          {s.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -553,72 +612,19 @@ export function CreateLightsailModal({
               )}
             </div>
 
-            <div className="border-t border-border/40" />
-
-            {/* 初始化脚本与 Termix 代码片段导入 */}
-            <div>
-              <div className="flex items-center justify-between gap-2">
-                <button
-                  type="button"
-                  onClick={() => setShowUserData(!showUserData)}
-                  className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1.5 cursor-pointer select-none"
-                >
-                  <FileCode className="size-3.5 text-muted-foreground" />
-                  <span>
-                    {showUserData
-                      ? t("lightsail.collapseScript")
-                      : t("lightsail.expandScript")}{" "}
-                    {t("lightsail.launchScript")}
-                  </span>
-                </button>
-
-                {snippets.length > 0 && (
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {t("lightsail.snippet")}
-                    </span>
-                    <Select
-                      value={selectedSnippetId}
-                      onValueChange={handleSnippetSelect}
-                    >
-                      <SelectTrigger
-                        size="sm"
-                        className="h-6 text-[10px] px-2 w-[160px]"
-                      >
-                        <SelectValue
-                          placeholder={t("lightsail.snippetPlaceholder")}
-                        />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {snippets.map((s) => (
-                          <SelectItem
-                            key={s.id}
-                            value={String(s.id)}
-                            className="text-xs"
-                          >
-                            {s.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+            {showUserData && (
+              <div className="space-y-1 pt-0.5">
+                <Textarea
+                  value={userData}
+                  onChange={(e) => setUserData(e.target.value)}
+                  placeholder={t("lightsail.scriptPlaceholder")}
+                  className="h-20 w-full text-[11px] font-mono resize-none py-1.5 px-2"
+                />
+                <p className="text-[10px] text-muted-foreground">
+                  {t("lightsail.scriptHint")}
+                </p>
               </div>
-
-              {showUserData && (
-                <div className="space-y-1 pt-1.5">
-                  <Textarea
-                    value={userData}
-                    onChange={(e) => setUserData(e.target.value)}
-                    placeholder={t("lightsail.scriptPlaceholder")}
-                    className="h-20 w-full text-[11px] font-mono resize-none py-1.5 px-2"
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    {t("lightsail.scriptHint")}
-                  </p>
-                </div>
-              )}
-            </div>
+            )}
           </div>
 
           <DialogFooter className="gap-2 pt-1 sm:justify-end">
