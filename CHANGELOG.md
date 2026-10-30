@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.6
+
+### Changed
+
+- feat: display monthly bandwidth quota and traffic usage for servers
+
 ## 1.1.5
 
 ### Changed
