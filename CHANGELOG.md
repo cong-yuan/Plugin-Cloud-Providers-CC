@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.12
+
+### Changed
+
+- feat: split snapshots into two rows and put snippet selector on dedicated row
+
 ## 1.1.11
 
 ### Changed
