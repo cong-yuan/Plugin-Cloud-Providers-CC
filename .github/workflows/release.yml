@@ -40,14 +40,17 @@ jobs:
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
         run: |
-          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
-          echo "Releasing tag: $TAG (version: $VERSION)"
-          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          RAW_TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          if [ -z "$RAW_TAG" ] || [ "$RAW_TAG" = "main" ]; then
+            RAW_TAG="v$(node -p "require('./manifest.json').version")"
+          fi
+          VERSION="${RAW_TAG#v}"
+          echo "Releasing tag: $RAW_TAG (version: $VERSION)"
+          echo "RELEASE_TAG=$RAW_TAG" >> "$GITHUB_ENV"
           echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
-          node -e '
+          VERSION="$VERSION" node -e '
             const fs = require("fs");
-            const ver = process.env.RELEASE_VERSION;
+            const ver = process.env.VERSION;
             for (const file of ["manifest.json", "package.json"]) {
               const data = JSON.parse(fs.readFileSync(file, "utf8"));
               data.version = ver;
