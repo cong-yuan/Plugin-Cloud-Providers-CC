@@ -50,6 +50,9 @@ export interface Instance {
   state: "running" | "stopped" | "other";
   address: string | null;
   imported: boolean;
+  user?: string;
+  keyName?: string;
+  port?: number;
 }
 
 export interface Report {

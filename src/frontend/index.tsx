@@ -33,7 +33,7 @@ import { AccountForm } from "./AccountForm";
 import { DiscoverView } from "./DiscoverView";
 import { CloudCard } from "./CloudCard";
 
-const TAB_ID = "cloud-providers";
+const TAB_ID = "cloud-providers-cc";
 
 type View =
   | { kind: "list" }

@@ -154,6 +154,11 @@ export function DiscoverView({
                 <div className="truncate font-mono text-[10px] text-muted-foreground">
                   {instance.address ?? t("discover.noAddress")} |{" "}
                   {instance.region} | {t(`state.${instance.state}`)}
+                  {instance.user ? ` | ${instance.user}` : ""}
+                  {instance.keyName ? ` | key: ${instance.keyName}` : ""}
+                  {instance.port && instance.port !== 22
+                    ? ` :${instance.port}`
+                    : ""}
                 </div>
               </div>
               {instance.imported && (

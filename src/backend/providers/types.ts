@@ -13,6 +13,17 @@ export interface CloudInstance {
   tags: string[];
   // Login name the cloud knows about, when it does.
   user?: string;
+  // SSH port if detected (defaults to 22).
+  port?: number;
+  // Key pair name in the cloud.
+  keyName?: string;
+  // Auto-downloaded key pair (e.g. Lightsail default key pair).
+  autoKey?: {
+    name: string;
+    privateKey: string;
+    publicKey: string;
+    keyType?: string;
+  };
 }
 
 export interface CredentialField {

@@ -1,5 +1,5 @@
 {
-  "name": "@termix-plugin/cloud-providers",
+  "name": "@termix-plugin/cloud-providers-cc",
   "private": true,
   "version": "1.1.0",
   "type": "module",

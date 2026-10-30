@@ -325,6 +325,77 @@ describe("aws", () => {
       tags: ["env:dev"],
     });
   });
+
+  it("downloads Lightsail default key pair and reads custom port and sshKeyName", async () => {
+    const privB64 = Buffer.from("FAKE-RSA-PRIVATE-KEY").toString("base64");
+    const pubB64 = Buffer.from("FAKE-RSA-PUBLIC-KEY").toString("base64");
+    const fetch = fakeFetch((url, init) => {
+      const target = init.headers["x-amz-target"];
+      if (target === "Lightsail_20161128.GetInstances") {
+        return json({
+          instances: [
+            {
+              name: "ls-default",
+              username: "ubuntu",
+              sshKeyName: "LightsailDefaultKeyPair",
+              publicIpAddress: "3.3.3.3",
+              privateIpAddress: "172.26.0.10",
+              state: { name: "running" },
+              tags: [{ key: "termix-port", value: "2202" }],
+            },
+            {
+              name: "ls-custom",
+              username: "bitnami",
+              sshKeyName: "my-custom-key",
+              publicIpAddress: "4.4.4.4",
+              privateIpAddress: "172.26.0.11",
+              state: { name: "running" },
+              tags: [],
+            },
+          ],
+        });
+      }
+      if (target === "Lightsail_20161128.DownloadDefaultKeyPair") {
+        return json({
+          privateKeyBase64: privB64,
+          publicKeyBase64: pubB64,
+        });
+      }
+      return status(404);
+    });
+
+    const result = await list(
+      "aws",
+      {
+        accessKeyId: "AK",
+        secretAccessKey: "SK",
+        regions: "us-east-1",
+        service: "lightsail",
+      },
+      fetch,
+    );
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toMatchObject({
+      name: "ls-default",
+      user: "ubuntu",
+      port: 2202,
+      keyName: "LightsailDefaultKeyPair",
+      autoKey: {
+        name: "Lightsail-us-east-1-DefaultKeyPair",
+        privateKey: "FAKE-RSA-PRIVATE-KEY",
+        publicKey: "FAKE-RSA-PUBLIC-KEY",
+        keyType: "ssh-rsa",
+      },
+    });
+
+    expect(result[1]).toMatchObject({
+      name: "ls-custom",
+      user: "bitnami",
+      keyName: "my-custom-key",
+    });
+    expect(result[1].autoKey).toBeUndefined();
+  });
 });
 
 describe("azure", () => {

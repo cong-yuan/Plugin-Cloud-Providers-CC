@@ -1,13 +1,13 @@
 {
-  "id": "cloud-providers",
-  "name": "Cloud Providers",
+  "id": "cloud-providers-cc",
+  "name": "Cloud Providers CC",
   "version": "1.1.0",
   "description": "Add hosts from AWS, Azure, Google Cloud, DigitalOcean, Hetzner and other clouds, and keep them in sync.",
   "author": {
     "name": "Termix"
   },
   "license": "Apache-2.0",
-  "repository": "https://github.com/Termix-SSH/Plugin-Cloud-Providers",
+  "repository": "https://github.com/cong-yuan/Plugin-Cloud-Providers-CC",
   "docs": "https://docs.termix.site/plugins/cloud-providers",
   "video": "https://www.youtube.com/watch?v=fgVkd6761qg",
   "category": "Infrastructure",
@@ -33,13 +33,14 @@
     "hosts:read",
     "hosts:write",
     "credentials:use",
+    "credentials:write",
     "users:impersonate",
     "notify:send"
   ],
   "contributes": {
     "tabs": [
       {
-        "id": "cloud-providers",
+        "id": "cloud-providers-cc",
         "titleKey": "tab.title",
         "icon": "Cloud",
         "openFrom": ["rail"]

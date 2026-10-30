@@ -27,7 +27,30 @@ interface Droplet {
 let droplets: Droplet[] = [];
 let denied = false;
 
-const cloud = fakeFetch((url) => {
+const cloud = fakeFetch((url, init) => {
+  if (url.host.includes("lightsail.us-east-1.amazonaws.com")) {
+    const target = init?.headers?.["x-amz-target"];
+    if (target === "Lightsail_20161128.GetInstances") {
+      return json({
+        instances: [
+          {
+            name: "lightsail-vm",
+            username: "ubuntu",
+            sshKeyName: "LightsailDefaultKeyPair",
+            publicIpAddress: "54.2.2.2",
+            state: { name: "running" },
+            tags: [{ key: "termix-port", value: "2222" }],
+          },
+        ],
+      });
+    }
+    if (target === "Lightsail_20161128.DownloadDefaultKeyPair") {
+      return json({
+        privateKeyBase64: Buffer.from("LS-PRIV-KEY").toString("base64"),
+        publicKeyBase64: Buffer.from("LS-PUB-KEY").toString("base64"),
+      });
+    }
+  }
   if (url.host !== "api.digitalocean.com") return undefined;
   if (denied) return status(401, "denied");
   return json({
@@ -114,7 +137,12 @@ async function request(
   return { status: response.status, body: await response.json() };
 }
 
-const ALL = ["cloud-providers.view", "cloud-providers.manage"];
+const ALL = [
+  "cloud-providers-cc.view",
+  "cloud-providers-cc.manage",
+  "credentials.create",
+  "credentials.view",
+];
 
 const account = {
   provider: "digitalocean",
@@ -168,7 +196,7 @@ describe("accounts", () => {
       syncMode: "manual",
     });
     const raw = db.sqlite
-      .prepare("SELECT credentials FROM p_cloud_providers_accounts")
+      .prepare("SELECT credentials FROM p_cloud_providers_cc_accounts")
       .get() as { credentials: string };
     expect(raw.credentials).not.toContain("SECRET-TOKEN");
   });
@@ -232,7 +260,7 @@ describe("accounts", () => {
   it("needs the manage permission to change anything", async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     db.close();
-    await setup(["cloud-providers.view"]);
+    await setup(["cloud-providers-cc.view"]);
     expect((await request("GET", "/accounts")).status).toBe(200);
     expect((await request("POST", "/accounts", account)).status).toBe(403);
   });
@@ -270,8 +298,8 @@ describe("discover and import", () => {
       folder: "Cloud",
       connectionType: "ssh",
     });
-    expect(host.tags).toContain("cloud:digitalocean");
-    expect(host.tags).toContain("cloud:nyc1");
+    expect(host.tags).toContain("cloud-cc:digitalocean");
+    expect(host.tags).toContain("cloud-cc:nyc1");
   });
 
   it("uses the termix-user tag over the default user", async () => {
@@ -390,7 +418,7 @@ describe("sync", () => {
     const gone = await request("POST", `/accounts/${id}/sync`);
     expect(gone.body.report.removed).toBe(1);
     expect((await hostsOf()).find((h) => h.name === "web")!.tags).toContain(
-      "cloud:missing",
+      "cloud-cc:missing",
     );
     const quiet = await request("POST", `/accounts/${id}/sync`);
     expect(quiet.body.report.removed).toBe(0);
@@ -398,7 +426,7 @@ describe("sync", () => {
     droplets = all;
     await request("POST", `/accounts/${id}/sync`);
     expect((await hostsOf()).find((h) => h.name === "web")!.tags).not.toContain(
-      "cloud:missing",
+      "cloud-cc:missing",
     );
   });
 
@@ -427,6 +455,44 @@ describe("sync", () => {
     expect(list.body.accounts[0].status).toBe("error");
     expect(list.body.accounts[0].lastError).toMatch(/refused the keys/);
   });
+
+  it("auto-downloads Lightsail default key pair and populates host username, credential and port", async () => {
+    const created = await request("POST", "/accounts", {
+      provider: "aws",
+      name: "aws-lightsail",
+      credentials: {
+        accessKeyId: "AK",
+        secretAccessKey: "SK",
+        regions: "us-east-1",
+        service: "lightsail",
+      },
+      onRemoved: "keep",
+    });
+    expect(created.status).toBe(201);
+    const id = created.body.account.id;
+
+    const syncRes = await request("POST", `/accounts/${id}/sync`);
+    expect(syncRes.status).toBe(200);
+    expect(syncRes.body.report.created).toBe(1);
+
+    const hosts = await hostsOf();
+    const lsHost = hosts.find((h) => h.name === "lightsail-vm")!;
+    expect(lsHost).toBeDefined();
+    expect(lsHost.ip).toBe("54.2.2.2");
+    expect(lsHost.username).toBe("ubuntu");
+    expect(lsHost.port).toBe(2222);
+    expect(lsHost.authType).toBe("credential");
+    expect(lsHost.credentialId).toBeTruthy();
+
+    const creds = await mock.ctx.asUser("user-1", () =>
+      mock.ctx.credentials.listSshKeys(),
+    );
+    const autoCred = creds.find(
+      (c) => c.name === "Lightsail-us-east-1-DefaultKeyPair",
+    );
+    expect(autoCred).toBeDefined();
+    expect(lsHost.credentialId).toBe(autoCred!.id);
+  });
 });
 
 describe("auto sync", () => {
@@ -447,7 +513,7 @@ describe("auto sync", () => {
 
     db.sqlite
       .prepare(
-        "UPDATE p_cloud_providers_accounts SET last_sync_at = ? WHERE id = ?",
+        "UPDATE p_cloud_providers_cc_accounts SET last_sync_at = ? WHERE id = ?",
       )
       .run(new Date(Date.now() - 10 * 60_000).toISOString(), auto);
     denied = true;
@@ -455,7 +521,7 @@ describe("auto sync", () => {
     expect(mock.notifications).toHaveLength(1);
     expect(mock.notifications[0].notification).toMatchObject({
       audience: { userId: "user-1" },
-      dedupeKey: `cloud-providers:${auto}`,
+      dedupeKey: `cloud-providers-cc:${auto}`,
     });
   });
 });

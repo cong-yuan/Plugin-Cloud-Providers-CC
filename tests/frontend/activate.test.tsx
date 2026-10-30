@@ -21,11 +21,11 @@ afterEach(async () => {
 describe(`${manifest.id} activate`, () => {
   it("registers the rail item and tab", async () => {
     rendered = await renderWithApp(plugin, { manifest, locales });
-    expect(rendered.registered.tabs()).toEqual(["cloud-providers"]);
+    expect(rendered.registered.tabs()).toEqual(["cloud-providers-cc"]);
     expect(rendered.registered.railItems()).toEqual([
       expect.objectContaining({
-        id: "cloud-providers",
-        permission: "cloud-providers.view",
+        id: "cloud-providers-cc",
+        permission: "cloud-providers-cc.view",
       }),
     ]);
   });
@@ -63,7 +63,7 @@ describe(`${manifest.id} activate`, () => {
       locales,
       api: { get } as never,
     });
-    rendered.renderTab("cloud-providers", { isVisible: true });
+    rendered.renderTab("cloud-providers-cc", { isVisible: true });
     expect(await screen.findByText("Hetzner prod")).toBeTruthy();
     expect(screen.getByText(locales.add)).toBeTruthy();
   });
@@ -82,7 +82,7 @@ describe(`${manifest.id} activate`, () => {
       locales,
       api: { get } as never,
     });
-    rendered.renderTab("cloud-providers", { isVisible: true });
+    rendered.renderTab("cloud-providers-cc", { isVisible: true });
     expect(await screen.findByText(locales.empty)).toBeTruthy();
   });
 });
@@ -92,7 +92,7 @@ describe("cloud accounts dashboard card", () => {
     rendered = await renderWithApp(plugin, {
       manifest,
       locales,
-      permissions: ["cloud-providers.view"],
+      permissions: ["cloud-providers-cc.view"],
       api: {
         get: vi.fn(async () => ({
           data: {

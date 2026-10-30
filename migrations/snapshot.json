@@ -76,7 +76,7 @@
       },
       "indexes": [
         {
-          "name": "uq_p_cloud_providers_accounts_owner_name",
+          "name": "uq_p_cloud_providers_cc_accounts_owner_name",
           "columns": [
             "ownerId",
             "name"
@@ -116,7 +116,7 @@
       },
       "indexes": [
         {
-          "name": "uq_p_cloud_providers_instances_account_instance",
+          "name": "uq_p_cloud_providers_cc_instances_account_instance",
           "columns": [
             "accountId",
             "instanceId"
@@ -124,7 +124,7 @@
           "unique": true
         },
         {
-          "name": "idx_p_cloud_providers_instances_account",
+          "name": "idx_p_cloud_providers_cc_instances_account",
           "columns": [
             "accountId"
           ]

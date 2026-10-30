@@ -9,7 +9,7 @@ import {
   varchar,
 } from "@termix-ssh/plugin-sdk/db";
 
-// p_cloud_providers_accounts: one cloud login. The keys are sealed with the
+// p_cloud_providers_cc_accounts: one cloud login. The keys are sealed with the
 // installation key and never leave the server.
 export const accounts = defineTable(
   "accounts",
@@ -38,14 +38,14 @@ export const accounts = defineTable(
   {
     uniques: [
       {
-        name: "uq_p_cloud_providers_accounts_owner_name",
+        name: "uq_p_cloud_providers_cc_accounts_owner_name",
         columns: ["ownerId", "name"],
       },
     ],
   },
 );
 
-// p_cloud_providers_instances: which Termix host came from which cloud
+// p_cloud_providers_cc_instances: which Termix host came from which cloud
 // instance. It goes with the host if the host is deleted.
 export const instances = defineTable(
   "instances",
@@ -61,13 +61,13 @@ export const instances = defineTable(
   {
     uniques: [
       {
-        name: "uq_p_cloud_providers_instances_account_instance",
+        name: "uq_p_cloud_providers_cc_instances_account_instance",
         columns: ["accountId", "instanceId"],
       },
     ],
     indexes: [
       {
-        name: "idx_p_cloud_providers_instances_account",
+        name: "idx_p_cloud_providers_cc_instances_account",
         columns: ["accountId"],
       },
     ],

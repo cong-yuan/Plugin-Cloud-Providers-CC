@@ -95,7 +95,9 @@ async function listEc2(
           value: childText(t, "value") ?? "",
         }));
         const id = childText(node, "instanceId") ?? "";
-        out.push({
+        const keyName = childText(node, "keyName");
+        const platform = childText(node, "platform");
+        const inst: CloudInstance = {
           id: `${region}/${id}`,
           name: tags.find((t) => t.key === "Name")?.value || id,
           publicIp: childText(node, "ipAddress") ?? null,
@@ -110,7 +112,10 @@ async function listEc2(
           tags: tags
             .filter((t) => t.key !== "Name" && !t.key.startsWith("aws:"))
             .map((t) => (t.value ? `${t.key}:${t.value}` : t.key)),
-        });
+        };
+        if (keyName) inst.keyName = keyName;
+        if (platform === "windows") inst.user = "Administrator";
+        out.push(inst);
       }
     }
     token = childText(root, "nextToken");
@@ -119,14 +124,87 @@ async function listEc2(
   return out;
 }
 
+interface LightsailPort {
+  fromPort: number;
+  toPort: number;
+  protocol: string;
+}
+
 interface LightsailInstance {
   name: string;
   username?: string;
+  sshKeyName?: string;
   publicIpAddress?: string;
   privateIpAddress?: string;
   state?: { name?: string };
   location?: { regionName?: string };
   tags?: Array<{ key: string; value?: string }>;
+  networking?: {
+    ports?: LightsailPort[];
+  };
+}
+
+async function downloadLightsailDefaultKeyPair(
+  fetch: PluginFetch,
+  creds: Credentials,
+  region: string,
+): Promise<{
+  name: string;
+  privateKey: string;
+  publicKey: string;
+  keyType: string;
+} | null> {
+  try {
+    const url = `https://lightsail.${region}.amazonaws.com/`;
+    const body = "{}";
+    const headers = signV4({
+      method: "POST",
+      url,
+      region,
+      service: "lightsail",
+      headers: {
+        "content-type": "application/x-amz-json-1.1",
+        "x-amz-target": "Lightsail_20161128.DownloadDefaultKeyPair",
+      },
+      body,
+      ...keys(creds),
+    });
+    const response = await send(fetch, url, { method: "POST", headers, body });
+    const json = (await response.json()) as {
+      privateKeyBase64?: string;
+      publicKeyBase64?: string;
+    };
+    if (!json.privateKeyBase64) return null;
+    const privateKey = Buffer.from(json.privateKeyBase64, "base64").toString(
+      "utf8",
+    );
+    const publicKey = json.publicKeyBase64
+      ? Buffer.from(json.publicKeyBase64, "base64").toString("utf8")
+      : "";
+    return {
+      name: `Lightsail-${region}-DefaultKeyPair`,
+      privateKey,
+      publicKey,
+      keyType: "ssh-rsa",
+    };
+  } catch {
+    return null;
+  }
+}
+
+function detectLightsailPort(i: LightsailInstance): number {
+  for (const t of i.tags ?? []) {
+    if (t.key.toLowerCase() === "termix-port" && t.value) {
+      const p = Number(t.value);
+      if (p > 0 && p <= 65535) return p;
+    }
+    const match = /^termix-port[:=](\d+)$/i.exec(t.key);
+    if (match) {
+      const p = Number(match[1]);
+      if (p > 0 && p <= 65535) return p;
+    }
+  }
+  return 22;
 }
 
 async function listLightsail(
@@ -137,6 +215,13 @@ async function listLightsail(
   const out: CloudInstance[] = [];
   const url = `https://lightsail.${region}.amazonaws.com/`;
   let pageToken: string | undefined;
+  let defaultKeyPromise: Promise<{
+    name: string;
+    privateKey: string;
+    publicKey: string;
+    keyType: string;
+  } | null> | null = null;
+
   for (let page = 0; page < 200; page += 1) {
     const body = JSON.stringify(pageToken ? { pageToken } : {});
     const headers = signV4({
@@ -157,7 +242,8 @@ async function listLightsail(
       nextPageToken?: string;
     };
     for (const i of json.instances ?? []) {
-      out.push({
+      const port = detectLightsailPort(i);
+      const inst: CloudInstance = {
         id: `lightsail/${region}/${i.name}`,
         name: i.name,
         publicIp: i.publicIpAddress ?? null,
@@ -172,8 +258,29 @@ async function listLightsail(
         tags: (i.tags ?? []).map((t) =>
           t.value ? `${t.key}:${t.value}` : t.key,
         ),
-        user: i.username,
-      });
+      };
+      if (i.username) inst.user = i.username;
+      if (port !== 22) inst.port = port;
+      if (i.sshKeyName) inst.keyName = i.sshKeyName;
+
+      const isDefaultKey =
+        !i.sshKeyName || i.sshKeyName.toLowerCase().includes("defaultkeypair");
+
+      if (isDefaultKey) {
+        if (!defaultKeyPromise) {
+          defaultKeyPromise = downloadLightsailDefaultKeyPair(
+            fetch,
+            creds,
+            region,
+          );
+        }
+        const autoKey = await defaultKeyPromise;
+        if (autoKey) {
+          inst.autoKey = autoKey;
+        }
+      }
+
+      out.push(inst);
     }
     pageToken = json.nextPageToken;
     if (!pageToken) break;
@@ -198,11 +305,11 @@ export const aws: Provider = {
       key: "service",
       type: "select",
       required: true,
-      options: ["ec2", "lightsail", "both"],
+      options: ["both", "lightsail", "ec2"],
     },
   ],
   async list(creds, fetch) {
-    const service = creds.service || "ec2";
+    const service = creds.service || "both";
     const out: CloudInstance[] = [];
     if (service === "ec2" || service === "both") {
       for (const region of await regionsFor(fetch, creds)) {

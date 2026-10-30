@@ -51,9 +51,21 @@ export interface DiscoveredInstance extends CloudInstance {
   imported: boolean;
 }
 
-export const MANAGED_PREFIX = "cloud:";
+export const MANAGED_PREFIX = "cloud-cc:";
 const FOLDER_ICON = "cloud";
 const USER_TAG = /^termix-user[:=](.+)$/i;
+const PORT_TAG = /^termix-port[:=](\d+)$/i;
+
+export function portFor(instance: CloudInstance): number {
+  for (const tag of instance.tags) {
+    const match = PORT_TAG.exec(tag);
+    if (match) {
+      const port = Number(match[1]);
+      if (port > 0 && port <= 65535) return port;
+    }
+  }
+  return instance.port ?? 22;
+}
 
 export class SyncError extends Error {
   constructor(
@@ -155,17 +167,63 @@ export function createSync(
     }));
   }
 
+  async function resolveCredential(
+    instance: CloudInstance,
+    row: AccountRow,
+    existingCreds: Array<{
+      id: number;
+      name: string;
+      username?: string | null;
+    }>,
+  ): Promise<number | null> {
+    if (instance.autoKey) {
+      const found = existingCreds.find(
+        (c) => c.name.toLowerCase() === instance.autoKey!.name.toLowerCase(),
+      );
+      if (found) return found.id;
+      try {
+        const created = await ctx.credentials.createSshKey({
+          name: instance.autoKey.name,
+          description: `Auto-imported from ${row.name} (${instance.region})`,
+          username: instance.user || null,
+          privateKey: instance.autoKey.privateKey,
+          publicKey: instance.autoKey.publicKey,
+          keyType: instance.autoKey.keyType || "ssh-rsa",
+        });
+        const saved = {
+          id: created.id,
+          name: instance.autoKey.name,
+          username: instance.user || null,
+        };
+        existingCreds.push(saved);
+        return created.id;
+      } catch (err) {
+        log.warn(
+          `Could not save auto-detected SSH key for ${instance.name}: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+    if (instance.keyName) {
+      const found = existingCreds.find(
+        (c) => c.name.toLowerCase() === instance.keyName!.toLowerCase(),
+      );
+      if (found) return found.id;
+    }
+    return row.defaultCredentialId ?? null;
+  }
+
   function inputFor(
     row: AccountRow,
     instance: CloudInstance,
     address: string,
+    resolvedCredentialId?: number | null,
   ): PluginHostCreateInput {
     const provider = getProvider(row.provider)!;
-    const credentialId = row.defaultCredentialId;
+    const credentialId = resolvedCredentialId ?? row.defaultCredentialId;
     return {
       name: instance.name,
       ip: address,
-      port: 22,
+      port: portFor(instance),
       username: userFor(instance, row, provider.defaultUser),
       authType: credentialId ? "credential" : "none",
       credentialId: credentialId ?? undefined,
@@ -217,11 +275,35 @@ export function createSync(
         const owned = new Map<number, PluginHostRecord>(
           (await ctx.hosts.listOwned()).map((h) => [h.id, h]),
         );
+        let existingCreds: Array<{
+          id: number;
+          name: string;
+          username?: string | null;
+        }> = [];
+        try {
+          const [keys, summaries] = await Promise.all([
+            ctx.credentials.listSshKeys().catch(() => []),
+            ctx.credentials.list().catch(() => []),
+          ]);
+          const map = new Map<
+            number,
+            { id: number; name: string; username?: string | null }
+          >();
+          for (const s of summaries)
+            map.set(s.id, { id: s.id, name: s.name, username: s.username });
+          for (const k of keys)
+            map.set(k.id, { id: k.id, name: k.name, username: k.username });
+          existingCreds = Array.from(map.values());
+        } catch {
+          // Fall back if credentials list is not available
+        }
 
         for (const instance of instances) {
           const existing = byInstance.get(instance.id);
           const current = existing ? owned.get(existing.hostId) : undefined;
           const address = pickAddress(instance, row.addressPreference);
+          const credId = await resolveCredential(instance, row, existingCreds);
+          const provider = getProvider(row.provider)!;
           try {
             if (existing && !current) {
               // Deleted by hand, so it comes back as a new host.
@@ -233,7 +315,17 @@ export function createSync(
             if (existing && current) {
               const tags = managedTags(instance, row.provider);
               const ip = address ?? current.ip;
-              const signature = sha([instance.name, ip, tags]);
+              const expectedUser = userFor(instance, row, provider.defaultUser);
+              const expectedPort = portFor(instance);
+              const expectedCredId = credId ?? current.credentialId;
+              const signature = sha([
+                instance.name,
+                ip,
+                tags,
+                expectedUser,
+                expectedCredId,
+                expectedPort,
+              ]);
               if (
                 existing.signature === signature &&
                 existing.state !== "gone"
@@ -241,11 +333,27 @@ export function createSync(
                 report.unchanged += 1;
                 continue;
               }
-              await ctx.hosts.update(existing.hostId, {
+              const patch: Record<string, unknown> = {
                 name: instance.name,
                 ip,
                 tags: mergeTags(current.tags, tags),
-              });
+              };
+              if (!current.credentialId && credId) {
+                patch.credentialId = credId;
+                patch.authType = "credential";
+              }
+              if (
+                expectedUser &&
+                (!current.username ||
+                  (current.username === provider.defaultUser &&
+                    expectedUser !== provider.defaultUser))
+              ) {
+                patch.username = expectedUser;
+              }
+              if (expectedPort !== 22 && current.port === 22) {
+                patch.port = expectedPort;
+              }
+              await ctx.hosts.update(existing.hostId, patch as any);
               await client
                 .update(stores.instances)
                 .set({ signature, state: instance.state })
@@ -257,7 +365,7 @@ export function createSync(
               report.skipped += 1;
               continue;
             }
-            const input = inputFor(row, instance, address);
+            const input = inputFor(row, instance, address, credId);
             const created = await ctx.hosts.create(input);
             await client.insert(stores.instances).values({
               accountId: row.id,
@@ -267,6 +375,9 @@ export function createSync(
                 instance.name,
                 address,
                 managedTags(instance, row.provider),
+                input.username,
+                input.credentialId,
+                input.port,
               ]),
               state: instance.state,
             });
@@ -371,8 +482,8 @@ export function createSync(
             body: message,
             severity: "warning",
             audience: { userId: row.ownerId },
-            dedupeKey: `cloud-providers:${row.id}`,
-            link: { tab: "cloud-providers" },
+            dedupeKey: `cloud-providers-cc:${row.id}`,
+            link: { tab: "cloud-providers-cc" },
           })
           .catch(() => {});
       }
