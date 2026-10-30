@@ -33,7 +33,7 @@ import { AccountForm } from "./AccountForm";
 import { DiscoverView } from "./DiscoverView";
 import { CloudCard } from "./CloudCard";
 
-const TAB_ID = "cloud-providers-cc";
+const TAB_ID = "cc-cloud-providers";
 
 type View =
   | { kind: "list" }
@@ -256,7 +256,7 @@ export function activate(app: TermixApp): void {
     hostless: true,
   });
   app.registerDashboardCard({
-    id: "cloud-accounts",
+    id: "cc-cloud-accounts",
     titleKey: "card.title",
     defaultPanel: "side",
     defaultHeight: 180,

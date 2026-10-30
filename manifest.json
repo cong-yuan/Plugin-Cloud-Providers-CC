@@ -1,5 +1,5 @@
 {
-  "id": "cloud-providers-cc",
+  "id": "cc-cloud-providers",
   "name": "Cloud Providers CC",
   "version": "1.1.0",
   "description": "Add hosts from AWS, Azure, Google Cloud, DigitalOcean, Hetzner and other clouds, and keep them in sync.",
@@ -40,7 +40,7 @@
   "contributes": {
     "tabs": [
       {
-        "id": "cloud-providers-cc",
+        "id": "cc-cloud-providers",
         "titleKey": "tab.title",
         "icon": "Cloud",
         "openFrom": ["rail"]
@@ -62,7 +62,7 @@
     ],
     "dashboardCards": [
       {
-        "id": "cloud-accounts",
+        "id": "cc-cloud-accounts",
         "titleKey": "card.title",
         "icon": "Cloud"
       }

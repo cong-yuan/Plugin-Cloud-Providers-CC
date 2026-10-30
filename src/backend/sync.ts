@@ -51,7 +51,7 @@ export interface DiscoveredInstance extends CloudInstance {
   imported: boolean;
 }
 
-export const MANAGED_PREFIX = "cloud-cc:";
+export const MANAGED_PREFIX = "cc-cloud:";
 const FOLDER_ICON = "cloud";
 const USER_TAG = /^termix-user[:=](.+)$/i;
 const PORT_TAG = /^termix-port[:=](\d+)$/i;
@@ -482,8 +482,8 @@ export function createSync(
             body: message,
             severity: "warning",
             audience: { userId: row.ownerId },
-            dedupeKey: `cloud-providers-cc:${row.id}`,
-            link: { tab: "cloud-providers-cc" },
+            dedupeKey: `cc-cloud-providers:${row.id}`,
+            link: { tab: "cc-cloud-providers" },
           })
           .catch(() => {});
       }

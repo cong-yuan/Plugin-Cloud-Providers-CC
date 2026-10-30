@@ -21,11 +21,11 @@ afterEach(async () => {
 describe(`${manifest.id} activate`, () => {
   it("registers the rail item and tab", async () => {
     rendered = await renderWithApp(plugin, { manifest, locales });
-    expect(rendered.registered.tabs()).toEqual(["cloud-providers-cc"]);
+    expect(rendered.registered.tabs()).toEqual(["cc-cloud-providers"]);
     expect(rendered.registered.railItems()).toEqual([
       expect.objectContaining({
-        id: "cloud-providers-cc",
-        permission: "cloud-providers-cc.view",
+        id: "cc-cloud-providers",
+        permission: "cc-cloud-providers.view",
       }),
     ]);
   });
@@ -63,7 +63,7 @@ describe(`${manifest.id} activate`, () => {
       locales,
       api: { get } as never,
     });
-    rendered.renderTab("cloud-providers-cc", { isVisible: true });
+    rendered.renderTab("cc-cloud-providers", { isVisible: true });
     expect(await screen.findByText("Hetzner prod")).toBeTruthy();
     expect(screen.getByText(locales.add)).toBeTruthy();
   });
@@ -82,7 +82,7 @@ describe(`${manifest.id} activate`, () => {
       locales,
       api: { get } as never,
     });
-    rendered.renderTab("cloud-providers-cc", { isVisible: true });
+    rendered.renderTab("cc-cloud-providers", { isVisible: true });
     expect(await screen.findByText(locales.empty)).toBeTruthy();
   });
 });
@@ -92,7 +92,7 @@ describe("cloud accounts dashboard card", () => {
     rendered = await renderWithApp(plugin, {
       manifest,
       locales,
-      permissions: ["cloud-providers-cc.view"],
+      permissions: ["cc-cloud-providers.view"],
       api: {
         get: vi.fn(async () => ({
           data: {
@@ -117,8 +117,8 @@ describe("cloud accounts dashboard card", () => {
         })),
       } as never,
     });
-    expect(rendered.registered.dashboardCards()).toEqual(["cloud-accounts"]);
-    rendered.renderDashboardCard("cloud-accounts");
+    expect(rendered.registered.dashboardCards()).toEqual(["cc-cloud-accounts"]);
+    rendered.renderDashboardCard("cc-cloud-accounts");
     expect(await screen.findByText("Prod")).toBeTruthy();
     expect(screen.getByText(/bad token/)).toBeTruthy();
   });

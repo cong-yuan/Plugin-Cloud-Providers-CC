@@ -138,8 +138,8 @@ async function request(
 }
 
 const ALL = [
-  "cloud-providers-cc.view",
-  "cloud-providers-cc.manage",
+  "cc-cloud-providers.view",
+  "cc-cloud-providers.manage",
   "credentials.create",
   "credentials.view",
 ];
@@ -196,7 +196,7 @@ describe("accounts", () => {
       syncMode: "manual",
     });
     const raw = db.sqlite
-      .prepare("SELECT credentials FROM p_cloud_providers_cc_accounts")
+      .prepare("SELECT credentials FROM p_cc_cloud_providers_accounts")
       .get() as { credentials: string };
     expect(raw.credentials).not.toContain("SECRET-TOKEN");
   });
@@ -260,7 +260,7 @@ describe("accounts", () => {
   it("needs the manage permission to change anything", async () => {
     await new Promise<void>((resolve) => server.close(() => resolve()));
     db.close();
-    await setup(["cloud-providers-cc.view"]);
+    await setup(["cc-cloud-providers.view"]);
     expect((await request("GET", "/accounts")).status).toBe(200);
     expect((await request("POST", "/accounts", account)).status).toBe(403);
   });
@@ -298,8 +298,8 @@ describe("discover and import", () => {
       folder: "Cloud",
       connectionType: "ssh",
     });
-    expect(host.tags).toContain("cloud-cc:digitalocean");
-    expect(host.tags).toContain("cloud-cc:nyc1");
+    expect(host.tags).toContain("cc-cloud:digitalocean");
+    expect(host.tags).toContain("cc-cloud:nyc1");
   });
 
   it("uses the termix-user tag over the default user", async () => {
@@ -418,7 +418,7 @@ describe("sync", () => {
     const gone = await request("POST", `/accounts/${id}/sync`);
     expect(gone.body.report.removed).toBe(1);
     expect((await hostsOf()).find((h) => h.name === "web")!.tags).toContain(
-      "cloud-cc:missing",
+      "cc-cloud:missing",
     );
     const quiet = await request("POST", `/accounts/${id}/sync`);
     expect(quiet.body.report.removed).toBe(0);
@@ -426,7 +426,7 @@ describe("sync", () => {
     droplets = all;
     await request("POST", `/accounts/${id}/sync`);
     expect((await hostsOf()).find((h) => h.name === "web")!.tags).not.toContain(
-      "cloud-cc:missing",
+      "cc-cloud:missing",
     );
   });
 
@@ -513,7 +513,7 @@ describe("auto sync", () => {
 
     db.sqlite
       .prepare(
-        "UPDATE p_cloud_providers_cc_accounts SET last_sync_at = ? WHERE id = ?",
+        "UPDATE p_cc_cloud_providers_accounts SET last_sync_at = ? WHERE id = ?",
       )
       .run(new Date(Date.now() - 10 * 60_000).toISOString(), auto);
     denied = true;
@@ -521,7 +521,7 @@ describe("auto sync", () => {
     expect(mock.notifications).toHaveLength(1);
     expect(mock.notifications[0].notification).toMatchObject({
       audience: { userId: "user-1" },
-      dedupeKey: `cloud-providers-cc:${auto}`,
+      dedupeKey: `cc-cloud-providers:${auto}`,
     });
   });
 });
