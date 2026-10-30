@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Activity,
+  ArrowDownUp,
   ChevronDown,
   ChevronRight,
   Cloud,
@@ -13,6 +15,7 @@ import {
   RefreshCw,
   Terminal,
   Trash2,
+  Wifi,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -110,6 +113,28 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
       : account.region || "";
     const isStopped = tags.includes("cc-cloud:stopped");
 
+    const netTag = tags.find((t: string) => t.startsWith("cc-cloud:net:"));
+    let network: any = undefined;
+    if (netTag) {
+      try {
+        const label = decodeURIComponent(netTag.replace("cc-cloud:net:", ""));
+        network = {
+          type: isHostLightsail ? "traffic_package" : "pay_as_you_go",
+          label,
+        };
+      } catch {}
+    } else if (isHostLightsail) {
+      network = {
+        type: "traffic_package",
+        label: "1 TB/月",
+      };
+    } else if (account.provider === "aws") {
+      network = {
+        type: "pay_as_you_go",
+        label: "按量计费 (最高 5 Gbps)",
+      };
+    }
+
     return {
       id: instanceId,
       name: h.name,
@@ -119,6 +144,7 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
       region,
       state: isStopped ? "stopped" : "running",
       imported: true,
+      network,
       tags,
     };
   });
@@ -700,6 +726,44 @@ function CloudTab({ isVisible }: TabProps) {
                       "无公网 IP";
                     const isRunning = instance.state === "running";
 
+                    let networkInfo: {
+                      icon: React.ReactNode;
+                      text: string;
+                    } | null = null;
+                    if (instance.network?.label) {
+                      const isTraffic =
+                        instance.network.type === "traffic_package";
+                      const isBandwidth = instance.network.type === "bandwidth";
+                      networkInfo = {
+                        icon: isTraffic ? (
+                          <ArrowDownUp className="size-2.5 text-amber-500 shrink-0" />
+                        ) : isBandwidth ? (
+                          <Wifi className="size-2.5 text-blue-500 shrink-0" />
+                        ) : (
+                          <Activity className="size-2.5 text-slate-400 shrink-0" />
+                        ),
+                        text: isTraffic
+                          ? `流量: ${instance.network.label}`
+                          : isBandwidth
+                            ? `带宽: ${instance.network.label}`
+                            : instance.network.label,
+                      };
+                    } else if (isLightsail) {
+                      networkInfo = {
+                        icon: (
+                          <ArrowDownUp className="size-2.5 text-amber-500 shrink-0" />
+                        ),
+                        text: "流量: 1000 GB/月",
+                      };
+                    } else if (account.provider === "aws") {
+                      networkInfo = {
+                        icon: (
+                          <Activity className="size-2.5 text-slate-400 shrink-0" />
+                        ),
+                        text: "按量计费 (最高 5 Gbps)",
+                      };
+                    }
+
                     return (
                       <ListRow
                         key={instance.id}
@@ -728,7 +792,7 @@ function CloudTab({ isVisible }: TabProps) {
                           </div>
                         }
                         meta={
-                          <span className="flex items-center gap-2 text-[11px]">
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
                             <span>
                               IP:{" "}
                               <code className="font-mono text-foreground/80">
@@ -744,7 +808,13 @@ function CloudTab({ isVisible }: TabProps) {
                                 ? "运行中"
                                 : instance.state || "已停止"}
                             </span>
-                          </span>
+                            {networkInfo && (
+                              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/90 bg-muted/50 px-1.5 py-0.5 rounded border border-border/40 font-mono">
+                                {networkInfo.icon}
+                                <span>{networkInfo.text}</span>
+                              </span>
+                            )}
+                          </div>
                         }
                         trailing={
                           <div

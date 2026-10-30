@@ -2,6 +2,15 @@ import type { PluginFetch } from "@termix-ssh/plugin-sdk/backend";
 
 export type InstanceState = "running" | "stopped" | "other";
 
+export interface NetworkPlan {
+  // "traffic_package" (固定月流量包), "bandwidth" (固定带宽), "pay_as_you_go" (按量计费)
+  type: "traffic_package" | "bandwidth" | "pay_as_you_go";
+  monthlyTransferGb?: number;
+  usedTransferGb?: number;
+  bandwidthMbps?: number;
+  label?: string;
+}
+
 export interface CloudInstance {
   id: string;
   name: string;
@@ -17,6 +26,8 @@ export interface CloudInstance {
   port?: number;
   // Key pair name in the cloud.
   keyName?: string;
+  // Network / bandwidth / traffic information.
+  network?: NetworkPlan;
   // Auto-downloaded key pair (e.g. Lightsail default key pair).
   autoKey?: {
     name: string;

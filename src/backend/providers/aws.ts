@@ -116,6 +116,10 @@ async function listEc2(
         };
         if (keyName) inst.keyName = keyName;
         if (platform === "windows") inst.user = "Administrator";
+        inst.network = {
+          type: "pay_as_you_go",
+          label: "按量计费 (最高 5 Gbps)",
+        };
         out.push(inst);
       }
     }
@@ -142,6 +146,9 @@ interface LightsailInstance {
   tags?: Array<{ key: string; value?: string }>;
   networking?: {
     ports?: LightsailPort[];
+    monthlyTransfer?: {
+      gbPerMonthAllocated?: number;
+    };
   };
 }
 
@@ -292,6 +299,61 @@ function detectLightsailPort(i: LightsailInstance): number {
   return 22;
 }
 
+async function getLightsailMetric(
+  fetch: PluginFetch,
+  creds: Credentials,
+  region: string,
+  instanceName: string,
+): Promise<number | null> {
+  try {
+    const url = `https://lightsail.${region}.amazonaws.com/`;
+    const now = new Date();
+    const startTime = Math.floor(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000,
+    );
+    const endTime = Math.floor(Date.now() / 1000);
+
+    const body = JSON.stringify({
+      instanceName,
+      metricName: "NetworkOut",
+      period: 86400,
+      startTime,
+      endTime,
+      unit: "Bytes",
+      statistics: ["Sum"],
+    });
+
+    const headers = signV4({
+      method: "POST",
+      url,
+      region,
+      service: "lightsail",
+      headers: {
+        "content-type": "application/x-amz-json-1.1",
+        "x-amz-target": "Lightsail_20161128.GetInstanceMetricData",
+      },
+      body,
+      ...keys(creds),
+    });
+
+    const response = await send(fetch, url, { method: "POST", headers, body });
+    if (!response.ok) return null;
+    const json = (await response.json()) as {
+      metricData?: Array<{ sum?: number }>;
+    };
+    if (json.metricData && json.metricData.length > 0) {
+      const totalBytes = json.metricData.reduce(
+        (acc, dp) => acc + (dp.sum || 0),
+        0,
+      );
+      return totalBytes;
+    }
+    return 0;
+  } catch {
+    return null;
+  }
+}
+
 async function listLightsail(
   fetch: PluginFetch,
   creds: Credentials,
@@ -347,6 +409,38 @@ async function listLightsail(
       if (i.username) inst.user = i.username;
       if (port !== 22) inst.port = port;
       if (i.sshKeyName) inst.keyName = i.sshKeyName;
+
+      const transferGb = i.networking?.monthlyTransfer?.gbPerMonthAllocated;
+      if (typeof transferGb === "number" && transferGb > 0) {
+        const quotaStr =
+          transferGb >= 1000
+            ? `${(transferGb / 1000).toFixed(transferGb % 1000 === 0 ? 0 : 1)} TB`
+            : `${transferGb} GB`;
+        inst.network = {
+          type: "traffic_package",
+          monthlyTransferGb: transferGb,
+          label: `${quotaStr}/月`,
+        };
+
+        if (inst.state === "running") {
+          try {
+            const usedBytes = await Promise.race([
+              getLightsailMetric(fetch, creds, region, i.name),
+              new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), 2500),
+              ),
+            ]);
+            if (typeof usedBytes === "number") {
+              const usedGb = Number(
+                (usedBytes / (1024 * 1024 * 1024)).toFixed(2),
+              );
+              inst.network.usedTransferGb = usedGb;
+              const percent = ((usedGb / transferGb) * 100).toFixed(1);
+              inst.network.label = `${usedGb} GB / ${quotaStr} (${percent}%)`;
+            }
+          } catch {}
+        }
+      }
 
       const isDefaultKey =
         !i.sshKeyName || i.sshKeyName.toLowerCase().includes("defaultkeypair");

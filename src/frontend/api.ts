@@ -46,6 +46,14 @@ export interface AccountInput {
   credits?: string | null;
 }
 
+export interface NetworkPlan {
+  type: "traffic_package" | "bandwidth" | "pay_as_you_go";
+  monthlyTransferGb?: number;
+  usedTransferGb?: number;
+  bandwidthMbps?: number;
+  label?: string;
+}
+
 export interface Instance {
   id: string;
   name: string;
@@ -59,6 +67,7 @@ export interface Instance {
   keyName?: string;
   port?: number;
   tags?: string[];
+  network?: NetworkPlan;
 }
 
 export interface Report {

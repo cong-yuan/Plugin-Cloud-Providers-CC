@@ -262,6 +262,10 @@ describe("aws", () => {
         region: "us-east-1",
         state: "running",
         tags: ["termix-user:ubuntu"],
+        network: {
+          type: "pay_as_you_go",
+          label: "按量计费 (最高 5 Gbps)",
+        },
       },
     ]);
     const first = fetch.calls[0];

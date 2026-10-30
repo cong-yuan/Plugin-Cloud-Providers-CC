@@ -487,6 +487,41 @@ export function registerRoutes(
             : parts.length > 1
               ? parts[0]
               : "";
+          const tags: string[] = Array.isArray(host?.tags)
+            ? host.tags
+            : typeof host?.tags === "string"
+              ? host.tags
+                  .split(",")
+                  .map((t: string) => t.trim())
+                  .filter(Boolean)
+              : [];
+
+          const netTag = tags.find((t: string) =>
+            t.startsWith("cc-cloud:net:"),
+          );
+          let network: any = undefined;
+          if (netTag) {
+            try {
+              const label = decodeURIComponent(
+                netTag.replace("cc-cloud:net:", ""),
+              );
+              network = {
+                type: isLightsail ? "traffic_package" : "pay_as_you_go",
+                label,
+              };
+            } catch {}
+          } else if (isLightsail) {
+            network = {
+              type: "traffic_package",
+              label: "1 TB/月",
+            };
+          } else if (row.provider === "aws") {
+            network = {
+              type: "pay_as_you_go",
+              label: "按量计费 (最高 5 Gbps)",
+            };
+          }
+
           return {
             id: m.instanceId,
             name: host?.name || parts[parts.length - 1] || m.instanceId,
@@ -496,14 +531,8 @@ export function registerRoutes(
             region,
             state: m.state || "running",
             imported: true,
-            tags: Array.isArray(host?.tags)
-              ? host.tags
-              : typeof host?.tags === "string"
-                ? host.tags
-                    .split(",")
-                    .map((t: string) => t.trim())
-                    .filter(Boolean)
-                : [],
+            network,
+            tags,
           };
         });
         res.json({ instances });

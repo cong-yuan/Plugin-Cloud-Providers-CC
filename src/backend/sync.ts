@@ -105,6 +105,11 @@ export function managedTags(
   }
   if (instance.region) tags.push(`${MANAGED_PREFIX}${instance.region}`);
   if (instance.state === "stopped") tags.push(`${MANAGED_PREFIX}stopped`);
+  if (instance.network?.label) {
+    tags.push(
+      `${MANAGED_PREFIX}net:${encodeURIComponent(instance.network.label)}`,
+    );
+  }
   return tags;
 }
 
