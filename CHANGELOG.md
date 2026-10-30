@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.9
+
+### Changed
+
+- feat: full i18n, redesigned lightsail modal layout and order, and database firewall cache
+
 ## 1.1.8
 
 ### Changed
