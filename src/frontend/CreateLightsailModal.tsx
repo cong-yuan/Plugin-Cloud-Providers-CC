@@ -338,7 +338,7 @@ export function CreateLightsailModal({
       <DialogContent className="w-[95vw] sm:max-w-xl max-h-[90vh] overflow-y-auto">
         <DialogHeader className="pb-1">
           <DialogTitle className="flex items-center gap-2 text-base font-semibold">
-            <Zap className="size-4.5 text-amber-500" />
+            <Zap className="size-5 text-amber-500" />
             {t("lightsail.createTitle")}
           </DialogTitle>
           <DialogDescription className="text-xs text-muted-foreground">
@@ -402,7 +402,7 @@ export function CreateLightsailModal({
             <div className="flex flex-col gap-1.5">
               <div className="flex items-center justify-between">
                 <label className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-                  <Network className="size-3 text-primary" />
+                  <Network className="size-4 text-primary shrink-0" />
                   <span>{t("lightsail.networkType")}</span>
                 </label>
                 <span className="text-[10px] text-muted-foreground">
@@ -506,9 +506,10 @@ export function CreateLightsailModal({
             />
           </div>
 
-          {/* 4. 自动每日快照 (独立模块，时间选择默认渲染常驻，勾选时仅切换启用状态，不引起页面重排) */}
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5">
-            <div className="flex items-center justify-between gap-2">
+          {/* 4. 自动每日快照 (独立模块，分为两行，时间选择常驻，勾选时切换启用状态) */}
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2">
+            {/* 第一行：勾选框与标题 */}
+            <div className="flex items-center justify-between">
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <Checkbox
                   checked={enableAutoSnapshot}
@@ -516,114 +517,134 @@ export function CreateLightsailModal({
                     setEnableAutoSnapshot(Boolean(checked))
                   }
                 />
-                <span className="font-semibold text-foreground text-[11px] flex items-center gap-1.5">
-                  <Camera className="size-3.5 text-muted-foreground" />
-                  {t("lightsail.autoSnapshot")}
+                <span className="font-semibold text-foreground text-xs flex items-center gap-1.5">
+                  <Camera className="size-4 text-primary shrink-0" />
+                  <span>{t("lightsail.autoSnapshot")}</span>
                 </span>
               </label>
+              <span className="text-[10px] text-muted-foreground">
+                {enableAutoSnapshot
+                  ? t("lightsail.autoSnapshotEnabled", {
+                      defaultValue: "已启用每日自动快照",
+                    })
+                  : t("lightsail.autoSnapshotDisabled", {
+                      defaultValue: "可选自动备份",
+                    })}
+              </span>
+            </div>
 
-              <div
-                className={cn(
-                  "flex items-center gap-1.5 shrink-0 transition-opacity",
-                  enableAutoSnapshot
-                    ? "opacity-100"
-                    : "opacity-40 pointer-events-none",
-                )}
+            {/* 第二行：快照执行时间选择 */}
+            <div
+              className={cn(
+                "flex items-center gap-2 pt-0.5 transition-opacity pl-6",
+                enableAutoSnapshot
+                  ? "opacity-100"
+                  : "opacity-45 pointer-events-none",
+              )}
+            >
+              <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">
+                {t("lightsail.snapshotTime")}
+              </span>
+              <Select
+                value={snapshotTime}
+                onValueChange={setSnapshotTime}
+                disabled={!enableAutoSnapshot}
               >
-                <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                  {t("lightsail.snapshotTime")}
-                </span>
-                <Select
-                  value={snapshotTime}
-                  onValueChange={setSnapshotTime}
-                  disabled={!enableAutoSnapshot}
+                <SelectTrigger
+                  size="sm"
+                  className="h-7.5 w-full text-xs px-2.5"
                 >
-                  <SelectTrigger
-                    size="sm"
-                    className="h-6.5 w-[170px] text-[10px] px-2"
-                  >
-                    <SelectValue
-                      placeholder={t("lightsail.snapshotTimePlaceholder")}
-                    />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {SNAPSHOT_HOURS.map((h) => (
-                      <SelectItem
-                        key={h.value}
-                        value={h.value}
-                        className="text-xs"
-                      >
-                        {h.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                  <SelectValue
+                    placeholder={t("lightsail.snapshotTimePlaceholder")}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {SNAPSHOT_HOURS.map((h) => (
+                    <SelectItem
+                      key={h.value}
+                      value={h.value}
+                      className="text-xs"
+                    >
+                      {h.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          {/* 5. 启动脚本 (与快照分开，默认展开) */}
-          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2">
-            <div className="flex items-center justify-between gap-2">
+          {/* 5. 启动脚本 (独立模块，默认展开，Snippet 独立成行避免挤占标题) */}
+          <div className="rounded-lg border border-border/60 bg-muted/20 p-2.5 space-y-2.5">
+            {/* 第一行：标题与展开收起 */}
+            <div className="flex items-center justify-between">
               <button
                 type="button"
                 onClick={() => setShowUserData(!showUserData)}
-                className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1.5 cursor-pointer select-none"
+                className="text-xs font-semibold text-foreground hover:text-primary flex items-center gap-1.5 cursor-pointer select-none"
               >
-                <FileCode className="size-3.5 text-muted-foreground" />
-                <span>
+                <FileCode className="size-4 text-primary shrink-0" />
+                <span>{t("lightsail.launchScript")}</span>
+                <span className="text-[10px] font-normal text-muted-foreground ml-1">
+                  (
                   {showUserData
                     ? t("lightsail.collapseScript")
-                    : t("lightsail.expandScript")}{" "}
-                  {t("lightsail.launchScript")}
+                    : t("lightsail.expandScript")}
+                  )
                 </span>
               </button>
-
-              {snippets.length > 0 && (
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                    {t("lightsail.snippet")}
-                  </span>
-                  <Select
-                    value={selectedSnippetId}
-                    onValueChange={handleSnippetSelect}
-                  >
-                    <SelectTrigger
-                      size="sm"
-                      className="h-6 text-[10px] px-2 w-[160px]"
-                    >
-                      <SelectValue
-                        placeholder={t("lightsail.snippetPlaceholder")}
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {snippets.map((s) => (
-                        <SelectItem
-                          key={s.id}
-                          value={String(s.id)}
-                          className="text-xs"
-                        >
-                          {s.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <span className="text-[10px] text-muted-foreground">
+                Cloud-init
+              </span>
             </div>
 
             {showUserData && (
-              <div className="space-y-1 pt-0.5">
-                <Textarea
-                  value={userData}
-                  onChange={(e) => setUserData(e.target.value)}
-                  placeholder={t("lightsail.scriptPlaceholder")}
-                  className="h-20 w-full text-[11px] font-mono resize-none py-1.5 px-2"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {t("lightsail.scriptHint")}
-                </p>
-              </div>
+              <>
+                {/* 第二行：Termix 代码片段选择 (独占一行) */}
+                {snippets.length > 0 && (
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <span className="text-[11px] font-medium text-foreground whitespace-nowrap shrink-0">
+                      {t("lightsail.snippet")}
+                    </span>
+                    <Select
+                      value={selectedSnippetId}
+                      onValueChange={handleSnippetSelect}
+                    >
+                      <SelectTrigger
+                        size="sm"
+                        className="h-7.5 w-full text-xs px-2.5"
+                      >
+                        <SelectValue
+                          placeholder={t("lightsail.snippetPlaceholder")}
+                        />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {snippets.map((s) => (
+                          <SelectItem
+                            key={s.id}
+                            value={String(s.id)}
+                            className="text-xs"
+                          >
+                            {s.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+
+                {/* 第三行：脚本输入区 */}
+                <div className="space-y-1">
+                  <Textarea
+                    value={userData}
+                    onChange={(e) => setUserData(e.target.value)}
+                    placeholder={t("lightsail.scriptPlaceholder")}
+                    className="h-20 w-full text-[11px] font-mono resize-none py-1.5 px-2"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {t("lightsail.scriptHint")}
+                  </p>
+                </div>
+              </>
             )}
           </div>
 

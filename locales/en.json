@@ -150,6 +150,8 @@
     "bundleLoading": "Syncing plans...",
     "bundlePlaceholder": "Select bundle / plan",
     "autoSnapshot": "Enable Automatic Snapshots",
+    "autoSnapshotEnabled": "Daily automated backup enabled",
+    "autoSnapshotDisabled": "Optional automated backup",
     "snapshotTime": "Execution Time (UTC):",
     "snapshotTimePlaceholder": "Select time",
     "launchScript": "Launch Script (Cloud-init User Data - optional)",

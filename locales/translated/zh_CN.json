@@ -150,6 +150,8 @@
     "bundleLoading": "同步套餐中...",
     "bundlePlaceholder": "选择套餐规格",
     "autoSnapshot": "启用每日自动快照",
+    "autoSnapshotEnabled": "已启用每日自动快照",
+    "autoSnapshotDisabled": "可选自动备份",
     "snapshotTime": "执行时间 (UTC):",
     "snapshotTimePlaceholder": "选择时间",
     "launchScript": "启动脚本 (Cloud-init User Data - 选填)",
