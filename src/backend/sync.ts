@@ -98,6 +98,11 @@ export function managedTags(
   provider: string,
 ): string[] {
   const tags = [`${MANAGED_PREFIX}${provider}`];
+  if (instance.id.startsWith("lightsail/")) {
+    tags.push(`${MANAGED_PREFIX}lightsail`);
+  } else if (provider === "aws") {
+    tags.push(`${MANAGED_PREFIX}ecs`);
+  }
   if (instance.region) tags.push(`${MANAGED_PREFIX}${instance.region}`);
   if (instance.state === "stopped") tags.push(`${MANAGED_PREFIX}stopped`);
   return tags;

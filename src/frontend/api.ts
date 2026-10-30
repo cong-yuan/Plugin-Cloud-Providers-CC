@@ -58,6 +58,7 @@ export interface Instance {
   user?: string;
   keyName?: string;
   port?: number;
+  tags?: string[];
 }
 
 export interface Report {
@@ -111,6 +112,10 @@ export function createApi(api: PluginApiClient) {
           `/accounts/${id}/test`,
         ),
       ),
+    instances: (id: number) =>
+      data(
+        api.get<{ instances: Instance[] }>(`/accounts/${id}/instances`),
+      ).then((r) => r.instances),
     discover: (id: number) =>
       data(
         api.post<{ instances: Instance[] }>(`/accounts/${id}/discover`),

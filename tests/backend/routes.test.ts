@@ -284,6 +284,10 @@ describe("discover and import", () => {
     expect(
       again.body.instances.map((i: { imported: boolean }) => i.imported),
     ).toEqual([true, false]);
+
+    const mapped = await request("GET", `/accounts/${id}/instances`);
+    expect(mapped.body.instances).toHaveLength(1);
+    expect(mapped.body.instances[0].imported).toBe(true);
   });
 
   it("makes ssh hosts with the account defaults", async () => {

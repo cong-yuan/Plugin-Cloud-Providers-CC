@@ -444,6 +444,77 @@ export function registerRoutes(
 
   /**
    * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/instances:
+   *   get:
+   *     summary: List the account's existing mapped instances from database
+   *     tags:
+   *       - Cloud Providers
+   *     parameters:
+   *       - in: path
+   *         name: id
+   *         required: true
+   *         schema:
+   *           type: integer
+   *     responses:
+   *       200:
+   *         description: Instances mapped to this account
+   */
+  router.get(
+    "/accounts/:id/instances",
+    view,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        const client = await db();
+        const mapped = await client
+          .select()
+          .from(stores.instances)
+          .where(eq(stores.instances.accountId, row.id));
+
+        let ownedHosts: any[] = [];
+        try {
+          ownedHosts = await ctx.hosts.listOwned();
+        } catch {}
+        const byHostId = new Map(ownedHosts.map((h) => [h.id, h]));
+
+        const instances = mapped.map((m: any) => {
+          const host = byHostId.get(m.hostId);
+          const parts = m.instanceId.split("/");
+          const isLightsail = m.instanceId.startsWith("lightsail/");
+          const region = isLightsail
+            ? parts[1] || ""
+            : parts.length > 1
+              ? parts[0]
+              : "";
+          return {
+            id: m.instanceId,
+            name: host?.name || parts[parts.length - 1] || m.instanceId,
+            publicIp: host?.ip || null,
+            privateIp: null,
+            address: host?.ip || null,
+            region,
+            state: m.state || "running",
+            imported: true,
+            tags: Array.isArray(host?.tags)
+              ? host.tags
+              : typeof host?.tags === "string"
+                ? host.tags
+                    .split(",")
+                    .map((t: string) => t.trim())
+                    .filter(Boolean)
+                : [],
+          };
+        });
+        res.json({ instances });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
    * /plugin-api/cloud-providers/accounts/{id}/discover:
    *   post:
    *     summary: List the cloud's instances and which ones are already hosts

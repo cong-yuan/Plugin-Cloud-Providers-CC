@@ -81,8 +81,21 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
     const settings =
       h.pluginSettings?.["cc-cloud-providers"] ||
       h.pluginSettings?.["cloud-providers"];
-    const instanceId = settings?.instanceId || `host-${h.id}`;
-    const regionTag = (h.tags || []).find(
+    const tags: string[] = h.tags || [];
+    const isHostLightsail =
+      settings?.instanceId?.startsWith("lightsail/") ||
+      tags.some((t: string) => t.includes("lightsail")) ||
+      h.name?.toLowerCase().includes("lightsail") ||
+      account.name.toLowerCase().includes("lightsail") ||
+      account.name.toLowerCase().includes("光帆") ||
+      (account.provider === "aws" &&
+        !settings?.instanceId?.match(/(?:^|\/)i-[0-9a-f]+/i));
+
+    const instanceId =
+      settings?.instanceId ||
+      (isHostLightsail ? `lightsail/${h.name}` : `host-${h.id}`);
+
+    const regionTag = tags.find(
       (t: string) =>
         t.startsWith("cc-cloud:") &&
         ![
@@ -95,7 +108,7 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
     const region = regionTag
       ? regionTag.replace("cc-cloud:", "")
       : account.region || "";
-    const isStopped = (h.tags || []).includes("cc-cloud:stopped");
+    const isStopped = tags.includes("cc-cloud:stopped");
 
     return {
       id: instanceId,
@@ -106,6 +119,7 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
       region,
       state: isStopped ? "stopped" : "running",
       imported: true,
+      tags,
     };
   });
 }
@@ -311,19 +325,32 @@ function CloudTab({ isVisible }: TabProps) {
           const cached = loadCachedInstances(accountId);
           if (cached.length > 0) {
             setAccountInstances((prev) => ({ ...prev, [accountId]: cached }));
-          } else {
-            const account = accounts.find((a) => a.id === accountId);
-            if (account) {
-              const fromHosts = getInstancesFromHosts(account, hosts);
-              if (fromHosts.length > 0) {
+          }
+          // Fetch existing instances from local database mapped table (instant local query)
+          void api
+            .instances(accountId)
+            .then((list) => {
+              if (list && list.length > 0) {
                 setAccountInstances((prev) => ({
                   ...prev,
-                  [accountId]: fromHosts,
+                  [accountId]: list,
                 }));
-                saveCachedInstances(accountId, fromHosts);
+                saveCachedInstances(accountId, list);
+              } else if (!cached.length) {
+                const account = accounts.find((a) => a.id === accountId);
+                if (account) {
+                  const fromHosts = getInstancesFromHosts(account, hosts);
+                  if (fromHosts.length > 0) {
+                    setAccountInstances((prev) => ({
+                      ...prev,
+                      [accountId]: fromHosts,
+                    }));
+                    saveCachedInstances(accountId, fromHosts);
+                  }
+                }
               }
-            }
-          }
+            })
+            .catch(() => {});
         }
       }
       return next;
@@ -649,7 +676,21 @@ function CloudTab({ isVisible }: TabProps) {
                   </div>
                 ) : (
                   instances.map((instance, instIndex) => {
-                    const isLightsail = instance.id.startsWith("lightsail/");
+                    const tagsList = Array.isArray(instance.tags)
+                      ? instance.tags
+                      : typeof instance.tags === "string"
+                        ? (instance.tags as string).split(",")
+                        : [];
+
+                    const isLightsail =
+                      instance.id.startsWith("lightsail/") ||
+                      tagsList.some((t: string) => t.includes("lightsail")) ||
+                      instance.keyName?.toLowerCase().includes("lightsail") ||
+                      instance.name?.toLowerCase().includes("lightsail") ||
+                      account.name.toLowerCase().includes("lightsail") ||
+                      account.name.toLowerCase().includes("光帆") ||
+                      (account.provider === "aws" &&
+                        !instance.id.match(/(?:^|\/)i-[0-9a-f]+/i));
                     const tagLabel = isLightsail ? "光帆" : "ECS";
                     const tagTone = isLightsail ? "warning" : "brand";
                     const ip =
