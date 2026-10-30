@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.8
+
+### Changed
+
+- feat: firewall rules management, dual-stack/ipv6 tiers, auto-snapshots and snippets
+
 ## 1.1.7
 
 ### Changed
