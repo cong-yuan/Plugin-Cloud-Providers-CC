@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.4
+
+### Changed
+
+- UI enhancements: inline buttons, instant expand caching, region tags, and SSH key PEM format fix
+
 ## 1.1.3
 
 ### Changed
