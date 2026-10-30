@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.1.10
+
+### Changed
+
+- feat: update translations, optimize lightsail modal layout and replace with official AWS SDK
+
 ## 1.1.9
 
 ### Changed
