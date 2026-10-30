@@ -110,6 +110,11 @@ export function managedTags(
       `${MANAGED_PREFIX}net:${encodeURIComponent(instance.network.label)}`,
     );
   }
+  if (instance.details) {
+    tags.push(
+      `${MANAGED_PREFIX}details:${encodeURIComponent(JSON.stringify(instance.details))}`,
+    );
+  }
   return tags;
 }
 
@@ -510,7 +515,7 @@ export function createSync(
     await ctx.db.persist();
   }
 
-  return { discover, run, runDue, removeAccount, mappedRows };
+  return { discover, run, runDue, removeAccount, mappedRows, credentialsOf };
 }
 
 export type CloudSync = ReturnType<typeof createSync>;

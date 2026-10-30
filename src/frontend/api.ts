@@ -54,6 +54,20 @@ export interface NetworkPlan {
   label?: string;
 }
 
+export interface InstanceDetails {
+  blueprintId?: string;
+  blueprintName?: string;
+  bundleId?: string;
+  cpuCount?: number;
+  ramSizeGb?: number;
+  diskSizeGb?: number;
+  isStaticIp?: boolean;
+  availabilityZone?: string;
+  regionName?: string;
+  createdAt?: string;
+  arn?: string;
+}
+
 export interface Instance {
   id: string;
   name: string;
@@ -68,6 +82,41 @@ export interface Instance {
   port?: number;
   tags?: string[];
   network?: NetworkPlan;
+  details?: InstanceDetails;
+}
+
+export interface CreateLightsailInput {
+  instanceName: string;
+  region?: string;
+  availabilityZone?: string;
+  blueprintId: string;
+  bundleId: string;
+  keyPairName?: string;
+  userData?: string;
+  allocateStaticIp?: boolean;
+}
+
+export interface LightsailBlueprint {
+  id: string;
+  name: string;
+  type: string;
+  defaultUser?: string;
+}
+
+export interface LightsailBundle {
+  id: string;
+  name: string;
+  price: number;
+  ramGb: number;
+  vCpu: number;
+  diskGb: number;
+  transferGb: number;
+}
+
+export interface LightsailPlansResponse {
+  blueprints: LightsailBlueprint[];
+  bundles: LightsailBundle[];
+  zones: string[];
 }
 
 export interface Report {
@@ -136,6 +185,26 @@ export function createApi(api: PluginApiClient) {
     sync: (id: number) =>
       data(api.post<{ report: Report }>(`/accounts/${id}/sync`)).then(
         (r) => r.report,
+      ),
+    getLightsailPlans: (id: number, region?: string) =>
+      data(
+        api.get<LightsailPlansResponse>(
+          `/accounts/${id}/lightsail/plans${region ? `?region=${encodeURIComponent(region)}` : ""}`,
+        ),
+      ),
+    createLightsail: (id: number, body: CreateLightsailInput) =>
+      data(
+        api.post<{ ok: boolean; instanceName: string }>(
+          `/accounts/${id}/lightsail/create`,
+          body,
+        ),
+      ),
+    updatePort: (id: number, instanceId: string, port: number) =>
+      data(
+        api.post<{ ok: boolean; port: number }>(
+          `/accounts/${id}/instances/port`,
+          { instanceId, port },
+        ),
       ),
   };
 }

@@ -1,6 +1,10 @@
 import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { getProvider } from "../../src/backend/providers/index.js";
+import {
+  createLightsailInstance,
+  formatAwsZone,
+} from "../../src/backend/providers/aws.js";
 import { ProviderError } from "../../src/backend/providers/types.js";
 import { fakeFetch, json, status, xml } from "./fake-fetch.js";
 
@@ -403,6 +407,70 @@ describe("aws", () => {
       keyName: "my-custom-key",
     });
     expect(result[1].autoKey).toBeUndefined();
+  });
+
+  it("formats AWS region and availability zones cleanly", () => {
+    expect(formatAwsZone("us-east-2a")).toBe("Ohio, Zone A (us-east-2a)");
+    expect(formatAwsZone("us-east-2b")).toBe("Ohio, Zone B (us-east-2b)");
+    expect(formatAwsZone("us-east-2")).toBe("Ohio (us-east-2)");
+    expect(formatAwsZone("us-east-1a")).toBe(
+      "N. Virginia, Zone A (us-east-1a)",
+    );
+    expect(formatAwsZone("ap-northeast-1a")).toBe(
+      "Tokyo, Zone A (ap-northeast-1a)",
+    );
+    expect(formatAwsZone("eu-central-1b")).toBe(
+      "Frankfurt, Zone B (eu-central-1b)",
+    );
+    expect(formatAwsZone("fra1")).toBe("fra1");
+  });
+
+  it("calls Lightsail CreateInstances and AllocateStaticIp via API", async () => {
+    let createBody: any = null;
+    let allocBody: any = null;
+    let attachBody: any = null;
+    const fetch = fakeFetch((url, init) => {
+      const target = init.headers["x-amz-target"];
+      if (target === "Lightsail_20161128.CreateInstances") {
+        createBody = JSON.parse(init.body);
+        return json({ operations: [{ status: "Started" }] });
+      }
+      if (target === "Lightsail_20161128.AllocateStaticIp") {
+        allocBody = JSON.parse(init.body);
+        return json({ operations: [{ status: "Started" }] });
+      }
+      if (target === "Lightsail_20161128.AttachStaticIp") {
+        attachBody = JSON.parse(init.body);
+        return json({ operations: [{ status: "Started" }] });
+      }
+      return json({});
+    });
+
+    const res = await createLightsailInstance(
+      fetch,
+      { accessKeyId: "AK", secretAccessKey: "SK" },
+      {
+        instanceName: "test-lightsail",
+        region: "us-east-2",
+        availabilityZone: "us-east-2a",
+        blueprintId: "debian_12",
+        bundleId: "micro_3_0",
+        allocateStaticIp: true,
+      },
+    );
+
+    expect(res).toEqual({ ok: true, instanceName: "test-lightsail" });
+    expect(createBody).toEqual({
+      instanceNames: ["test-lightsail"],
+      availabilityZone: "us-east-2a",
+      blueprintId: "debian_12",
+      bundleId: "micro_3_0",
+    });
+    expect(allocBody).toEqual({ staticIpName: "test-lightsail-ip" });
+    expect(attachBody).toEqual({
+      staticIpName: "test-lightsail-ip",
+      instanceName: "test-lightsail",
+    });
   });
 });
 

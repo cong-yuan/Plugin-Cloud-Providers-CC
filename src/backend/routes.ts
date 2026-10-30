@@ -2,6 +2,7 @@ import type { Request, Response, Router } from "express";
 import { and, eq } from "drizzle-orm";
 import type { PluginContext } from "@termix-ssh/plugin-sdk/backend";
 import { getProvider, providers, ProviderError } from "./providers/index.js";
+import { createLightsailInstance, getLightsailPlans } from "./providers/aws.js";
 import type { Credentials } from "./providers/index.js";
 import { SyncError, type AccountRow, type CloudSync } from "./sync.js";
 
@@ -482,11 +483,6 @@ export function registerRoutes(
           const host = byHostId.get(m.hostId);
           const parts = m.instanceId.split("/");
           const isLightsail = m.instanceId.startsWith("lightsail/");
-          const region = isLightsail
-            ? parts[1] || ""
-            : parts.length > 1
-              ? parts[0]
-              : "";
           const tags: string[] = Array.isArray(host?.tags)
             ? host.tags
             : typeof host?.tags === "string"
@@ -495,6 +491,38 @@ export function registerRoutes(
                   .map((t: string) => t.trim())
                   .filter(Boolean)
               : [];
+
+          const regionTag = tags.find(
+            (t: string) =>
+              t.startsWith("cc-cloud:") &&
+              !t.startsWith("cc-cloud:net:") &&
+              !t.startsWith("cc-cloud:details:") &&
+              ![
+                "cc-cloud:aws",
+                "cc-cloud:ecs",
+                "cc-cloud:lightsail",
+                "cc-cloud:stopped",
+              ].includes(t),
+          );
+          const region = regionTag
+            ? regionTag.replace("cc-cloud:", "")
+            : isLightsail
+              ? parts[1] || ""
+              : parts.length > 1
+                ? parts[0]
+                : "";
+
+          const detailsTag = tags.find((t: string) =>
+            t.startsWith("cc-cloud:details:"),
+          );
+          let details: any = undefined;
+          if (detailsTag) {
+            try {
+              details = JSON.parse(
+                decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
+              );
+            } catch {}
+          }
 
           const netTag = tags.find((t: string) =>
             t.startsWith("cc-cloud:net:"),
@@ -531,7 +559,10 @@ export function registerRoutes(
             region,
             state: m.state || "running",
             imported: true,
+            port: host?.port || 22,
+            user: host?.username,
             network,
+            details,
             tags,
           };
         });
@@ -655,6 +686,170 @@ export function registerRoutes(
         const row = await owned(req, res);
         if (!row) return;
         res.json({ report: await sync.run(row) });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/lightsail/plans:
+   *   get:
+   *     summary: Get available Lightsail blueprints, bundles and zones
+   */
+  router.get(
+    "/accounts/:id/lightsail/plans",
+    view,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        if (row.provider !== "aws") {
+          res
+            .status(400)
+            .json({ error: "Only AWS accounts support Lightsail" });
+          return;
+        }
+        const creds = await sync.credentialsOf(row);
+        const region = req.query.region
+          ? String(req.query.region)
+          : (creds.regions || creds.region || "us-east-2").split(",")[0].trim();
+        const plans = await getLightsailPlans(ctx.fetch, creds, region);
+        res.json(plans);
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/lightsail/create:
+   *   post:
+   *     summary: Create a new AWS Lightsail instance
+   */
+  router.post(
+    "/accounts/:id/lightsail/create",
+    manage,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        if (row.provider !== "aws") {
+          res
+            .status(400)
+            .json({ error: "Only AWS accounts support Lightsail" });
+          return;
+        }
+        const {
+          instanceName,
+          region,
+          availabilityZone,
+          blueprintId,
+          bundleId,
+          allocateStaticIp,
+          userData,
+        } = req.body ?? {};
+        if (
+          !instanceName ||
+          typeof instanceName !== "string" ||
+          !instanceName.trim()
+        ) {
+          res.status(400).json({ error: "实例名称不能为空" });
+          return;
+        }
+        if (!blueprintId || !bundleId) {
+          res.status(400).json({ error: "请选择系统镜像和套餐规格" });
+          return;
+        }
+
+        const creds = await sync.credentialsOf(row);
+        const targetRegion =
+          region ||
+          (creds.regions || creds.region || "us-east-2").split(",")[0].trim();
+
+        const result = await createLightsailInstance(ctx.fetch, creds, {
+          instanceName: instanceName.trim(),
+          region: targetRegion,
+          availabilityZone: availabilityZone || undefined,
+          blueprintId,
+          bundleId,
+          allocateStaticIp: allocateStaticIp !== false,
+          userData:
+            typeof userData === "string" && userData.trim()
+              ? userData.trim()
+              : undefined,
+        });
+
+        res.json({ ok: true, instanceName: result.instanceName });
+      } catch (error) {
+        fail(res, error);
+      }
+    },
+  );
+
+  /**
+   * @openapi
+   * /plugin-api/cloud-providers/accounts/{id}/instances/port:
+   *   post:
+   *     summary: Update SSH port for an instance host
+   */
+  router.post(
+    "/accounts/:id/instances/port",
+    manage,
+    async (req: Request, res: Response) => {
+      try {
+        const row = await owned(req, res);
+        if (!row) return;
+        const { instanceId, port } = req.body ?? {};
+        const numPort = Number(port);
+        if (!numPort || numPort < 1 || numPort > 65535) {
+          res.status(400).json({ error: "无效的端口号 (1-65535)" });
+          return;
+        }
+
+        const client = await db();
+        const mapped = await client
+          .select()
+          .from(stores.instances)
+          .where(
+            and(
+              eq(stores.instances.accountId, row.id),
+              eq(stores.instances.instanceId, instanceId),
+            ),
+          );
+
+        let ownedHosts: any[] = [];
+        try {
+          ownedHosts = await ctx.hosts.listOwned();
+        } catch {}
+
+        let targetHostId: number | null = null;
+        if (mapped[0]?.hostId) {
+          targetHostId = mapped[0].hostId;
+        } else {
+          const found = ownedHosts.find((h) => {
+            const settings =
+              h.pluginSettings?.["cc-cloud-providers"] ||
+              h.pluginSettings?.["cloud-providers"];
+            return (
+              settings?.instanceId === instanceId ||
+              h.name === instanceId.split("/").pop()
+            );
+          });
+          if (found) targetHostId = found.id;
+        }
+
+        if (targetHostId) {
+          await ctx.hosts.update(targetHostId, {
+            port: numPort,
+            sshPort: numPort,
+          } as any);
+          await ctx.db.persist();
+        }
+
+        res.json({ ok: true, port: numPort, targetHostId });
       } catch (error) {
         fail(res, error);
       }

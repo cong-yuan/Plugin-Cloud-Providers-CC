@@ -6,19 +6,24 @@ import {
   ChevronRight,
   Cloud,
   Copy,
+  Cpu,
   DownloadCloud,
   Folder,
+  Info,
   Loader2,
   Pencil,
   Plug,
   Plus,
   RefreshCw,
+  Server,
   Terminal,
   Trash2,
   Wifi,
+  Zap,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
+  notifyHostsChanged,
   useHosts,
   usePluginApi,
   useTabs,
@@ -43,6 +48,7 @@ import {
   type ProviderInfo,
   type SavedCredential,
 } from "./api";
+import { CreateLightsailModal } from "./CreateLightsailModal";
 import { AccountForm } from "./AccountForm";
 import { DiscoverView } from "./DiscoverView";
 import { CloudCard } from "./CloudCard";
@@ -68,6 +74,51 @@ function saveCachedInstances(accountId: number, instances: Instance[]) {
       JSON.stringify(instances),
     );
   } catch {}
+}
+
+const AWS_REGION_NAMES: Record<string, string> = {
+  "us-east-1": "N. Virginia",
+  "us-east-2": "Ohio",
+  "us-west-1": "N. California",
+  "us-west-2": "Oregon",
+  "af-south-1": "Cape Town",
+  "ap-east-1": "Hong Kong",
+  "ap-south-1": "Mumbai",
+  "ap-northeast-3": "Osaka",
+  "ap-northeast-2": "Seoul",
+  "ap-southeast-1": "Singapore",
+  "ap-southeast-2": "Sydney",
+  "ap-northeast-1": "Tokyo",
+  "ca-central-1": "Central",
+  "eu-central-1": "Frankfurt",
+  "eu-west-1": "Ireland",
+  "eu-west-2": "London",
+  "eu-south-1": "Milan",
+  "eu-west-3": "Paris",
+  "eu-north-1": "Stockholm",
+  "me-south-1": "Bahrain",
+  "sa-east-1": "São Paulo",
+};
+
+export function formatAwsZone(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (trimmed.includes("Zone") || trimmed.includes(",")) return trimmed;
+  const match = trimmed.match(/^([a-z]{2}-[a-z]+-\d+)([a-z])$/i);
+  if (match) {
+    const region = match[1].toLowerCase();
+    const letter = match[2].toUpperCase();
+    const regionName = AWS_REGION_NAMES[region];
+    if (regionName) {
+      return `${regionName}, Zone ${letter} (${trimmed})`;
+    }
+    return `Zone ${letter} (${trimmed})`;
+  }
+  const regName = AWS_REGION_NAMES[trimmed.toLowerCase()];
+  if (regName) {
+    return `${regName} (${trimmed})`;
+  }
+  return trimmed;
 }
 
 function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
@@ -101,6 +152,8 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
     const regionTag = tags.find(
       (t: string) =>
         t.startsWith("cc-cloud:") &&
+        !t.startsWith("cc-cloud:net:") &&
+        !t.startsWith("cc-cloud:details:") &&
         ![
           "cc-cloud:aws",
           "cc-cloud:ecs",
@@ -112,6 +165,18 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
       ? regionTag.replace("cc-cloud:", "")
       : account.region || "";
     const isStopped = tags.includes("cc-cloud:stopped");
+
+    const detailsTag = tags.find((t: string) =>
+      t.startsWith("cc-cloud:details:"),
+    );
+    let details: any = undefined;
+    if (detailsTag) {
+      try {
+        details = JSON.parse(
+          decodeURIComponent(detailsTag.replace("cc-cloud:details:", "")),
+        );
+      } catch {}
+    }
 
     const netTag = tags.find((t: string) => t.startsWith("cc-cloud:net:"));
     let network: any = undefined;
@@ -144,7 +209,10 @@ function getInstancesFromHosts(account: Account, hosts: any[]): Instance[] {
       region,
       state: isStopped ? "stopped" : "running",
       imported: true,
+      port: h.port || 22,
+      user: h.username,
       network,
+      details,
       tags,
     };
   });
@@ -301,6 +369,51 @@ function CloudTab({ isVisible }: TabProps) {
     Record<number, boolean>
   >({});
   const [importingId, setImportingId] = useState<string | null>(null);
+  const [lightsailAccount, setLightsailAccount] = useState<Account | null>(
+    null,
+  );
+  const [expandedDetailIds, setExpandedDetailIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [editPorts, setEditPorts] = useState<Record<string, number>>({});
+  const [savingPortId, setSavingPortId] = useState<string | null>(null);
+
+  function toggleDetail(instanceId: string) {
+    setExpandedDetailIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(instanceId)) next.delete(instanceId);
+      else next.add(instanceId);
+      return next;
+    });
+  }
+
+  async function handleSavePort(account: Account, instance: Instance) {
+    const portToSave = editPorts[instance.id] ?? instance.port ?? 22;
+    if (isNaN(portToSave) || portToSave < 1 || portToSave > 65535) {
+      toast.error("无效的端口号，请输入 1-65535 之间的数字");
+      return;
+    }
+
+    setSavingPortId(instance.id);
+    try {
+      await api.updatePort(account.id, instance.id, portToSave);
+      toast.success(`已保存 ${instance.name} SSH 端口为 ${portToSave}`);
+      try {
+        notifyHostsChanged();
+      } catch {}
+
+      setAccountInstances((prev) => ({
+        ...prev,
+        [account.id]: (prev[account.id] || []).map((i) =>
+          i.id === instance.id ? { ...i, port: portToSave } : i,
+        ),
+      }));
+    } catch (err) {
+      toast.error(errorMessage(err));
+    } finally {
+      setSavingPortId(null);
+    }
+  }
 
   const reload = useCallback(async () => {
     try {
@@ -636,6 +749,17 @@ function CloudTab({ isVisible }: TabProps) {
                   className="flex items-center gap-0.5"
                   onClick={(e) => e.stopPropagation()}
                 >
+                  {account.provider === "aws" && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      className="h-6 gap-1 px-2 text-[11px] text-amber-500 border-amber-500/30 hover:bg-amber-500/10 mr-1"
+                      onClick={() => setLightsailAccount(account)}
+                    >
+                      <Zap className="size-3 text-amber-500" />
+                      创建光帆
+                    </Button>
+                  )}
                   <ListRowAction
                     label={t("test")}
                     disabled={busy === account.id}
@@ -765,103 +889,337 @@ function CloudTab({ isVisible }: TabProps) {
                     }
 
                     return (
-                      <ListRow
-                        key={instance.id}
-                        stripe={instIndex}
-                        className="select-none"
-                        icon={
-                          <span
-                            className={cn(
-                              "size-2 rounded-full shrink-0",
-                              isRunning
-                                ? "bg-emerald-500"
-                                : "bg-muted-foreground/40",
-                            )}
-                            title={isRunning ? "运行中" : instance.state}
-                          />
-                        }
-                        title={
-                          <div className="flex items-center gap-2">
-                            <ListBadge tone={tagTone}>{tagLabel}</ListBadge>
-                            <span className="font-semibold text-foreground text-[13px] truncate">
-                              {instance.name}
-                            </span>
-                            {instance.imported && (
-                              <ListBadge tone="success">已导入</ListBadge>
-                            )}
-                          </div>
-                        }
-                        meta={
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
-                            <span>
-                              IP:{" "}
-                              <code className="font-mono text-foreground/80">
-                                {ip}
-                              </code>
-                            </span>
-                            {instance.region && (
-                              <span>· {instance.region}</span>
-                            )}
-                            <span>
-                              ·{" "}
-                              {isRunning
-                                ? "运行中"
-                                : instance.state || "已停止"}
-                            </span>
-                            {networkInfo && (
-                              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/90 bg-muted/50 px-1.5 py-0.5 rounded border border-border/40 font-mono">
-                                {networkInfo.icon}
-                                <span>{networkInfo.text}</span>
+                      <div key={instance.id} className="flex flex-col">
+                        <ListRow
+                          stripe={instIndex}
+                          className="select-none"
+                          icon={
+                            <span
+                              className={cn(
+                                "size-2 rounded-full shrink-0",
+                                isRunning
+                                  ? "bg-emerald-500"
+                                  : "bg-muted-foreground/40",
+                              )}
+                              title={isRunning ? "运行中" : instance.state}
+                            />
+                          }
+                          title={
+                            <div className="flex items-center gap-2">
+                              <ListBadge tone={tagTone}>{tagLabel}</ListBadge>
+                              <span className="font-semibold text-foreground text-[13px] truncate">
+                                {instance.name}
                               </span>
-                            )}
-                          </div>
-                        }
-                        trailing={
-                          <div
-                            className="flex items-center gap-0.5"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <ListRowAction
-                              label="连接"
-                              tone="brand"
-                              disabled={importingId === instance.id}
-                              onClick={() =>
-                                void handleConnect(account, instance)
-                              }
+                              {instance.imported && (
+                                <ListBadge tone="success">已导入</ListBadge>
+                              )}
+                            </div>
+                          }
+                          meta={
+                            <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px]">
+                              <span>
+                                IP:{" "}
+                                <code className="font-mono text-foreground/80">
+                                  {ip}
+                                </code>
+                              </span>
+                              {instance.region && (
+                                <span>· {formatAwsZone(instance.region)}</span>
+                              )}
+                              <span>
+                                ·{" "}
+                                {isRunning
+                                  ? "运行中"
+                                  : instance.state || "已停止"}
+                              </span>
+                              {networkInfo && (
+                                <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground/90 bg-muted/50 px-1.5 py-0.5 rounded border border-border/40 font-mono">
+                                  {networkInfo.icon}
+                                  <span>{networkInfo.text}</span>
+                                </span>
+                              )}
+                            </div>
+                          }
+                          trailing={
+                            <div
+                              className="flex items-center gap-0.5"
+                              onClick={(e) => e.stopPropagation()}
                             >
-                              <Terminal />
-                            </ListRowAction>
-                            <ListRowAction
-                              label="SFTP"
-                              onClick={() => handleSftp(instance)}
-                            >
-                              <Folder />
-                            </ListRowAction>
-                            <ListRowAction
-                              label="复制 IP"
-                              onClick={() => {
-                                if (ip && ip !== "无公网 IP") {
-                                  void navigator.clipboard.writeText(ip);
-                                  toast.success(`已复制 IP: ${ip}`);
-                                }
-                              }}
-                            >
-                              <Copy />
-                            </ListRowAction>
-                            {!instance.imported && (
                               <ListRowAction
-                                label="导入为主机"
+                                label={
+                                  expandedDetailIds.has(instance.id)
+                                    ? "收起详情"
+                                    : "服务器详情"
+                                }
+                                onClick={() => toggleDetail(instance.id)}
+                              >
+                                <Info
+                                  className={cn(
+                                    "size-3.5",
+                                    expandedDetailIds.has(instance.id) &&
+                                      "text-primary font-bold",
+                                  )}
+                                />
+                              </ListRowAction>
+                              <ListRowAction
+                                label="连接"
+                                tone="brand"
                                 disabled={importingId === instance.id}
                                 onClick={() =>
-                                  void handleImportOnly(account, instance)
+                                  void handleConnect(account, instance)
                                 }
                               >
-                                <DownloadCloud />
+                                <Terminal />
                               </ListRowAction>
-                            )}
+                              <ListRowAction
+                                label="SFTP"
+                                onClick={() => handleSftp(instance)}
+                              >
+                                <Folder />
+                              </ListRowAction>
+                              <ListRowAction
+                                label="复制 IP"
+                                onClick={() => {
+                                  if (ip && ip !== "无公网 IP") {
+                                    void navigator.clipboard.writeText(ip);
+                                    toast.success(`已复制 IP: ${ip}`);
+                                  }
+                                }}
+                              >
+                                <Copy />
+                              </ListRowAction>
+                              {!instance.imported && (
+                                <ListRowAction
+                                  label="导入为主机"
+                                  disabled={importingId === instance.id}
+                                  onClick={() =>
+                                    void handleImportOnly(account, instance)
+                                  }
+                                >
+                                  <DownloadCloud />
+                                </ListRowAction>
+                              )}
+                            </div>
+                          }
+                        />
+                        {expandedDetailIds.has(instance.id) && (
+                          <div className="mx-2 mb-2 p-3 rounded-lg border border-border/60 bg-muted/20 space-y-3 text-xs animate-in fade-in-50 duration-150">
+                            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/40 pb-2">
+                              <div className="flex items-center gap-2">
+                                <Server className="size-4 text-primary" />
+                                <span className="font-semibold text-foreground">
+                                  {instance.name}
+                                </span>
+                                <ListBadge tone={tagTone}>{tagLabel}</ListBadge>
+                                <span className="text-[11px] text-muted-foreground">
+                                  状态:{" "}
+                                  <span
+                                    className={
+                                      isRunning
+                                        ? "text-emerald-500 font-medium"
+                                        : "text-amber-500 font-medium"
+                                    }
+                                  >
+                                    {isRunning
+                                      ? "运行中"
+                                      : instance.state || "已停止"}
+                                  </span>
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 text-muted-foreground text-[11px]">
+                                <span>可用区:</span>
+                                <code className="text-foreground font-mono bg-muted px-1.5 py-0.5 rounded border border-border/40">
+                                  {formatAwsZone(instance.region) ||
+                                    instance.region ||
+                                    "未知"}
+                                </code>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2.5">
+                              {/* 1. SSH 端口配置 */}
+                              <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
+                                <div className="font-medium text-foreground flex items-center justify-between">
+                                  <span className="flex items-center gap-1.5">
+                                    <Terminal className="size-3 text-muted-foreground" />
+                                    SSH 端口配置
+                                  </span>
+                                </div>
+                                <div className="space-y-2 text-[11px]">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <span className="text-muted-foreground shrink-0">
+                                      SSH 端口:
+                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                      <input
+                                        type="number"
+                                        min="1"
+                                        max="65535"
+                                        value={
+                                          editPorts[instance.id] ??
+                                          instance.port ??
+                                          22
+                                        }
+                                        onChange={(e) =>
+                                          setEditPorts((prev) => ({
+                                            ...prev,
+                                            [instance.id]:
+                                              parseInt(e.target.value) || 22,
+                                          }))
+                                        }
+                                        className="w-16 h-6 px-1.5 py-0.5 font-mono text-[11px] rounded border border-border bg-background focus:outline-none focus:ring-1 focus:ring-primary text-right"
+                                      />
+                                      <Button
+                                        size="xs"
+                                        variant="outline"
+                                        className="h-6 px-2 text-[11px]"
+                                        disabled={savingPortId === instance.id}
+                                        onClick={() =>
+                                          void handleSavePort(account, instance)
+                                        }
+                                      >
+                                        {savingPortId === instance.id
+                                          ? "保存中..."
+                                          : "保存端口"}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">
+                                      登录用户:
+                                    </span>
+                                    <code className="font-mono text-foreground">
+                                      {instance.user ||
+                                        account.defaultUser ||
+                                        "root"}
+                                    </code>
+                                  </div>
+                                  {instance.keyName && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground">
+                                        SSH 密钥对:
+                                      </span>
+                                      <span
+                                        className="font-mono text-foreground truncate max-w-[130px]"
+                                        title={instance.keyName}
+                                      >
+                                        {instance.keyName}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 2. 网络与 IP */}
+                              <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
+                                <div className="font-medium text-foreground flex items-center gap-1.5">
+                                  <Wifi className="size-3 text-muted-foreground" />
+                                  网络与 IP
+                                </div>
+                                <div className="space-y-1.5 text-[11px]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">
+                                      公网 IP:
+                                    </span>
+                                    <div className="flex items-center gap-1">
+                                      <code className="font-mono text-foreground">
+                                        {instance.publicIp ||
+                                          instance.address ||
+                                          "无"}
+                                      </code>
+                                      {(instance.publicIp ||
+                                        instance.address) && (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            void navigator.clipboard.writeText(
+                                              instance.publicIp ||
+                                                instance.address ||
+                                                "",
+                                            );
+                                            toast.success("已复制公网 IP");
+                                          }}
+                                          className="hover:text-primary text-muted-foreground"
+                                          title="复制 IP"
+                                        >
+                                          <Copy className="size-2.5" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">
+                                      私网 IP:
+                                    </span>
+                                    <code className="font-mono text-foreground">
+                                      {instance.privateIp || "无"}
+                                    </code>
+                                  </div>
+                                  {instance.network && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground">
+                                        流量 / 带宽:
+                                      </span>
+                                      <span className="font-mono text-foreground">
+                                        {instance.network.label}
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+
+                              {/* 3. 规格与系统镜像 */}
+                              <div className="p-2.5 rounded bg-background/80 border border-border/40 space-y-2">
+                                <div className="font-medium text-foreground flex items-center gap-1.5">
+                                  <Cpu className="size-3 text-muted-foreground" />
+                                  规格与系统
+                                </div>
+                                <div className="space-y-1.5 text-[11px]">
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">
+                                      系统镜像:
+                                    </span>
+                                    <span
+                                      className="text-foreground font-medium truncate max-w-[140px]"
+                                      title={
+                                        instance.details?.blueprintName ||
+                                        instance.details?.blueprintId
+                                      }
+                                    >
+                                      {instance.details?.blueprintName ||
+                                        instance.details?.blueprintId ||
+                                        (isLightsail
+                                          ? "Debian / Linux"
+                                          : "ECS")}
+                                    </span>
+                                  </div>
+                                  <div className="flex items-center justify-between">
+                                    <span className="text-muted-foreground">
+                                      硬件规格:
+                                    </span>
+                                    <span className="font-mono text-foreground">
+                                      {instance.details?.cpuCount
+                                        ? `${instance.details.cpuCount} 核 / ${instance.details.ramSizeGb} GB`
+                                        : instance.details?.bundleId ||
+                                          "标准套餐"}
+                                    </span>
+                                  </div>
+                                  {instance.details?.diskSizeGb && (
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-muted-foreground">
+                                        系统盘:
+                                      </span>
+                                      <span className="font-mono text-foreground">
+                                        {instance.details.diskSizeGb} GB SSD
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                           </div>
-                        }
-                      />
+                        )}
+                      </div>
                     );
                   })
                 )}
@@ -870,6 +1228,18 @@ function CloudTab({ isVisible }: TabProps) {
           </div>
         );
       })}
+      {lightsailAccount && (
+        <CreateLightsailModal
+          account={lightsailAccount}
+          isOpen={Boolean(lightsailAccount)}
+          onClose={() => setLightsailAccount(null)}
+          api={api}
+          formatZone={formatAwsZone}
+          onSuccess={() => {
+            void syncNow(lightsailAccount);
+          }}
+        />
+      )}
     </div>
   );
 }

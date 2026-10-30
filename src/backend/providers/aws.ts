@@ -98,12 +98,13 @@ async function listEc2(
         const id = childText(node, "instanceId") ?? "";
         const keyName = childText(node, "keyName");
         const platform = childText(node, "platform");
+        const az = childText(child(node, "placement"), "availabilityZone");
         const inst: CloudInstance = {
           id: `${region}/${id}`,
           name: tags.find((t) => t.key === "Name")?.value || id,
           publicIp: childText(node, "ipAddress") ?? null,
           privateIp: childText(node, "privateIpAddress") ?? null,
-          region,
+          region: az || region,
           state:
             state === "running"
               ? "running"
@@ -137,12 +138,30 @@ interface LightsailPort {
 
 interface LightsailInstance {
   name: string;
+  arn?: string;
+  supportCode?: string;
+  createdAt?: string;
+  blueprintId?: string;
+  blueprintName?: string;
+  bundleId?: string;
+  isStaticIp?: boolean;
   username?: string;
   sshKeyName?: string;
   publicIpAddress?: string;
   privateIpAddress?: string;
   state?: { name?: string };
-  location?: { regionName?: string };
+  location?: {
+    availabilityZone?: string;
+    regionName?: string;
+  };
+  hardware?: {
+    cpuCount?: number;
+    ramSizeInGb?: number;
+    disks?: Array<{
+      sizeInGb?: number;
+      isSystemDisk?: boolean;
+    }>;
+  };
   tags?: Array<{ key: string; value?: string }>;
   networking?: {
     ports?: LightsailPort[];
@@ -390,12 +409,13 @@ async function listLightsail(
     };
     for (const i of json.instances ?? []) {
       const port = detectLightsailPort(i);
+      const zone = i.location?.availabilityZone || region;
       const inst: CloudInstance = {
         id: `lightsail/${region}/${i.name}`,
         name: i.name,
         publicIp: i.publicIpAddress ?? null,
         privateIp: i.privateIpAddress ?? null,
-        region,
+        region: zone,
         state:
           i.state?.name === "running"
             ? "running"
@@ -405,6 +425,19 @@ async function listLightsail(
         tags: (i.tags ?? []).map((t) =>
           t.value ? `${t.key}:${t.value}` : t.key,
         ),
+        details: {
+          blueprintId: i.blueprintId,
+          blueprintName: i.blueprintName,
+          bundleId: i.bundleId,
+          cpuCount: i.hardware?.cpuCount,
+          ramSizeGb: i.hardware?.ramSizeInGb,
+          diskSizeGb: i.hardware?.disks?.[0]?.sizeInGb,
+          isStaticIp: i.isStaticIp,
+          availabilityZone: i.location?.availabilityZone,
+          regionName: i.location?.regionName,
+          createdAt: i.createdAt,
+          arn: i.arn,
+        },
       };
       if (i.username) inst.user = i.username;
       if (port !== 22) inst.port = port;
@@ -506,3 +539,305 @@ export const aws: Provider = {
     return out;
   },
 };
+
+export const AWS_REGION_NAMES: Record<string, string> = {
+  "us-east-1": "N. Virginia",
+  "us-east-2": "Ohio",
+  "us-west-1": "N. California",
+  "us-west-2": "Oregon",
+  "af-south-1": "Cape Town",
+  "ap-east-1": "Hong Kong",
+  "ap-south-1": "Mumbai",
+  "ap-northeast-3": "Osaka",
+  "ap-northeast-2": "Seoul",
+  "ap-southeast-1": "Singapore",
+  "ap-southeast-2": "Sydney",
+  "ap-northeast-1": "Tokyo",
+  "ca-central-1": "Central",
+  "eu-central-1": "Frankfurt",
+  "eu-west-1": "Ireland",
+  "eu-west-2": "London",
+  "eu-south-1": "Milan",
+  "eu-west-3": "Paris",
+  "eu-north-1": "Stockholm",
+  "me-south-1": "Bahrain",
+  "sa-east-1": "São Paulo",
+};
+
+export function formatAwsZone(raw: string | null | undefined): string {
+  if (!raw) return "";
+  const trimmed = raw.trim();
+  if (trimmed.includes("Zone") || trimmed.includes(",")) return trimmed;
+  const match = trimmed.match(/^([a-z]{2}-[a-z]+-\d+)([a-z])$/i);
+  if (match) {
+    const region = match[1].toLowerCase();
+    const letter = match[2].toUpperCase();
+    const regionName = AWS_REGION_NAMES[region];
+    if (regionName) {
+      return `${regionName}, Zone ${letter} (${trimmed})`;
+    }
+    return `Zone ${letter} (${trimmed})`;
+  }
+  const regName = AWS_REGION_NAMES[trimmed.toLowerCase()];
+  if (regName) {
+    return `${regName} (${trimmed})`;
+  }
+  return trimmed;
+}
+
+export interface CreateLightsailInput {
+  instanceName: string;
+  region: string;
+  availabilityZone?: string;
+  blueprintId: string;
+  bundleId: string;
+  keyPairName?: string;
+  userData?: string;
+  allocateStaticIp?: boolean;
+}
+
+export const DEFAULT_LIGHTSAIL_BLUEPRINTS = [
+  {
+    id: "debian_12",
+    name: "Debian 12 (Bookworm)",
+    type: "os",
+    defaultUser: "admin",
+  },
+  {
+    id: "ubuntu_24_04",
+    name: "Ubuntu 24.04 LTS",
+    type: "os",
+    defaultUser: "ubuntu",
+  },
+  {
+    id: "ubuntu_22_04",
+    name: "Ubuntu 22.04 LTS",
+    type: "os",
+    defaultUser: "ubuntu",
+  },
+  {
+    id: "amazon_linux_2023",
+    name: "Amazon Linux 2023",
+    type: "os",
+    defaultUser: "ec2-user",
+  },
+  {
+    id: "almalinux_9",
+    name: "AlmaLinux 9",
+    type: "os",
+    defaultUser: "ec2-user",
+  },
+  {
+    id: "debian_11",
+    name: "Debian 11 (Bullseye)",
+    type: "os",
+    defaultUser: "admin",
+  },
+  {
+    id: "ubuntu_20_04",
+    name: "Ubuntu 20.04 LTS",
+    type: "os",
+    defaultUser: "ubuntu",
+  },
+];
+
+export const DEFAULT_LIGHTSAIL_BUNDLES = [
+  {
+    id: "nano_3_0",
+    name: "$3.50/月 - 512 MB 内存, 1 vCPU, 20 GB SSD, 1 TB 流量",
+    price: 3.5,
+    ramGb: 0.5,
+    vCpu: 1,
+    diskGb: 20,
+    transferGb: 1000,
+  },
+  {
+    id: "micro_3_0",
+    name: "$5.00/月 - 1 GB 内存, 1 vCPU, 40 GB SSD, 2 TB 流量 (推荐)",
+    price: 5.0,
+    ramGb: 1.0,
+    vCpu: 1,
+    diskGb: 40,
+    transferGb: 2000,
+  },
+  {
+    id: "small_3_0",
+    name: "$10.00/月 - 2 GB 内存, 1 vCPU, 60 GB SSD, 3 TB 流量 (畅销)",
+    price: 10.0,
+    ramGb: 2.0,
+    vCpu: 1,
+    diskGb: 60,
+    transferGb: 3000,
+  },
+  {
+    id: "medium_3_0",
+    name: "$20.00/月 - 4 GB 内存, 2 vCPU, 80 GB SSD, 4 TB 流量",
+    price: 20.0,
+    ramGb: 4.0,
+    vCpu: 2,
+    diskGb: 80,
+    transferGb: 4000,
+  },
+  {
+    id: "large_3_0",
+    name: "$40.00/月 - 8 GB 内存, 2 vCPU, 160 GB SSD, 5 TB 流量",
+    price: 40.0,
+    ramGb: 8.0,
+    vCpu: 2,
+    diskGb: 160,
+    transferGb: 5000,
+  },
+];
+
+export async function createLightsailInstance(
+  fetch: PluginFetch,
+  creds: Credentials,
+  input: CreateLightsailInput,
+): Promise<{ ok: boolean; instanceName: string }> {
+  const region = input.region || "us-east-2";
+  const url = `https://lightsail.${region}.amazonaws.com/`;
+  const zone = input.availabilityZone || `${region}a`;
+
+  const body = JSON.stringify({
+    instanceNames: [input.instanceName],
+    availabilityZone: zone,
+    blueprintId: input.blueprintId,
+    bundleId: input.bundleId,
+    keyPairName: input.keyPairName || undefined,
+    userData: input.userData || undefined,
+  });
+
+  const headers = signV4({
+    method: "POST",
+    url,
+    region,
+    service: "lightsail",
+    headers: {
+      "content-type": "application/x-amz-json-1.1",
+      "x-amz-target": "Lightsail_20161128.CreateInstances",
+    },
+    body,
+    ...keys(creds),
+  });
+
+  const res = await send(fetch, url, { method: "POST", headers, body });
+  if (!res.ok) {
+    const errText = await res.text();
+    let msg = `AWS Lightsail CreateInstances failed: ${errText}`;
+    try {
+      const errJson = JSON.parse(errText);
+      if (errJson.message) msg = errJson.message;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  if (input.allocateStaticIp) {
+    try {
+      const staticIpName = `${input.instanceName}-ip`;
+      const allocBody = JSON.stringify({ staticIpName });
+      const allocHeaders = signV4({
+        method: "POST",
+        url,
+        region,
+        service: "lightsail",
+        headers: {
+          "content-type": "application/x-amz-json-1.1",
+          "x-amz-target": "Lightsail_20161128.AllocateStaticIp",
+        },
+        body: allocBody,
+        ...keys(creds),
+      });
+      const allocRes = await send(fetch, url, {
+        method: "POST",
+        headers: allocHeaders,
+        body: allocBody,
+      });
+      if (allocRes.ok) {
+        const attachBody = JSON.stringify({
+          staticIpName,
+          instanceName: input.instanceName,
+        });
+        const attachHeaders = signV4({
+          method: "POST",
+          url,
+          region,
+          service: "lightsail",
+          headers: {
+            "content-type": "application/x-amz-json-1.1",
+            "x-amz-target": "Lightsail_20161128.AttachStaticIp",
+          },
+          body: attachBody,
+          ...keys(creds),
+        });
+        await send(fetch, url, {
+          method: "POST",
+          headers: attachHeaders,
+          body: attachBody,
+        });
+      }
+    } catch (e) {
+      console.warn("Could not allocate static IP:", e);
+    }
+  }
+
+  return { ok: true, instanceName: input.instanceName };
+}
+
+export async function getLightsailPlans(
+  fetch: PluginFetch,
+  creds: Credentials,
+  region: string,
+): Promise<{
+  blueprints: typeof DEFAULT_LIGHTSAIL_BLUEPRINTS;
+  bundles: typeof DEFAULT_LIGHTSAIL_BUNDLES;
+  zones: string[];
+}> {
+  const fallbackZones = [`${region}a`, `${region}b`, `${region}c`];
+  try {
+    const url = `https://lightsail.${region}.amazonaws.com/`;
+    const regBody = JSON.stringify({ includeAvailabilityZones: true });
+    const regHeaders = signV4({
+      method: "POST",
+      url,
+      region,
+      service: "lightsail",
+      headers: {
+        "content-type": "application/x-amz-json-1.1",
+        "x-amz-target": "Lightsail_20161128.GetRegions",
+      },
+      body: regBody,
+      ...keys(creds),
+    });
+
+    const regRes = await send(fetch, url, {
+      method: "POST",
+      headers: regHeaders,
+      body: regBody,
+    });
+    let zones: string[] = fallbackZones;
+    if (regRes.ok) {
+      const regJson = (await regRes.json()) as {
+        regions?: Array<{
+          name?: string;
+          zones?: Array<{ name?: string }>;
+        }>;
+      };
+      const found = regJson.regions?.find((r) => r.name === region);
+      if (found?.zones && found.zones.length > 0) {
+        zones = found.zones.map((z) => z.name || "").filter(Boolean);
+      }
+    }
+
+    return {
+      blueprints: DEFAULT_LIGHTSAIL_BLUEPRINTS,
+      bundles: DEFAULT_LIGHTSAIL_BUNDLES,
+      zones,
+    };
+  } catch {
+    return {
+      blueprints: DEFAULT_LIGHTSAIL_BLUEPRINTS,
+      bundles: DEFAULT_LIGHTSAIL_BUNDLES,
+      zones: fallbackZones,
+    };
+  }
+}

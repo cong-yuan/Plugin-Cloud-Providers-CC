@@ -11,6 +11,20 @@ export interface NetworkPlan {
   label?: string;
 }
 
+export interface InstanceDetails {
+  blueprintId?: string;
+  blueprintName?: string;
+  bundleId?: string;
+  cpuCount?: number;
+  ramSizeGb?: number;
+  diskSizeGb?: number;
+  isStaticIp?: boolean;
+  availabilityZone?: string;
+  regionName?: string;
+  createdAt?: string;
+  arn?: string;
+}
+
 export interface CloudInstance {
   id: string;
   name: string;
@@ -28,6 +42,8 @@ export interface CloudInstance {
   keyName?: string;
   // Network / bandwidth / traffic information.
   network?: NetworkPlan;
+  // Hardware, OS, blueprint, and location details.
+  details?: InstanceDetails;
   // Auto-downloaded key pair (e.g. Lightsail default key pair).
   autoKey?: {
     name: string;
