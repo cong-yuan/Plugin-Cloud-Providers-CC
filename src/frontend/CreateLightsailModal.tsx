@@ -342,7 +342,7 @@ export function CreateLightsailModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="w-[95vw] sm:max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Zap className="size-5 text-amber-500" />
@@ -365,7 +365,7 @@ export function CreateLightsailModal({
               onChange={(e) => setInstanceName(e.target.value)}
               placeholder="e.g. debian-prod-01"
               required
-              className="h-8 text-xs font-mono"
+              className="h-8 w-full text-xs font-mono"
             />
           </div>
 
@@ -380,7 +380,7 @@ export function CreateLightsailModal({
               )}
             </label>
             <Select value={zone} onValueChange={setZone}>
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="选择可用区" />
               </SelectTrigger>
               <SelectContent>
@@ -399,7 +399,7 @@ export function CreateLightsailModal({
               系统镜像 (Blueprint / OS)
             </label>
             <Select value={blueprintId} onValueChange={setBlueprintId}>
-              <SelectTrigger className="h-8 text-xs">
+              <SelectTrigger className="h-8 w-full text-xs">
                 <SelectValue placeholder="选择系统镜像" />
               </SelectTrigger>
               <SelectContent>
@@ -413,30 +413,32 @@ export function CreateLightsailModal({
           </div>
 
           {/* 网络大分类: Dual-stack 与 IPv6-only */}
-          <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-3">
+          <div className="space-y-2.5 rounded-lg border border-border/60 bg-muted/20 p-3">
             <label className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
               <Network className="size-3.5 text-primary" />
               网络类型 (Networking Type)
             </label>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               <button
                 type="button"
                 onClick={() => handleNetworkTypeChange("dual_stack")}
                 className={cn(
-                  "flex flex-col text-left p-2.5 rounded-md border transition-all select-none",
+                  "flex flex-col text-left p-3 rounded-lg border transition-all select-none cursor-pointer",
                   networkType === "dual_stack"
                     ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
                     : "border-border/60 bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                 )}
               >
                 <div className="flex items-center justify-between font-semibold text-xs">
-                  <span>Dual-stack (双栈)</span>
+                  <span className="text-foreground">
+                    Dual-stack (双栈 IPv4 + IPv6)
+                  </span>
                   {networkType === "dual_stack" && (
-                    <Check className="size-3.5 text-primary" />
+                    <Check className="size-3.5 text-primary shrink-0" />
                   )}
                 </div>
-                <span className="text-[10px] text-muted-foreground mt-1">
-                  包含公网 IPv4 + IPv6 地址，适合主流网络访问
+                <span className="text-[11px] text-muted-foreground mt-1 leading-normal">
+                  包含公网 IPv4 + IPv6 地址，适合主流网络访问（$5.00/月 起）
                 </span>
               </button>
 
@@ -444,20 +446,20 @@ export function CreateLightsailModal({
                 type="button"
                 onClick={() => handleNetworkTypeChange("ipv6_only")}
                 className={cn(
-                  "flex flex-col text-left p-2.5 rounded-md border transition-all select-none",
+                  "flex flex-col text-left p-3 rounded-lg border transition-all select-none cursor-pointer",
                   networkType === "ipv6_only"
                     ? "border-primary bg-primary/10 text-foreground ring-1 ring-primary"
                     : "border-border/60 bg-background/60 text-muted-foreground hover:bg-muted/40 hover:text-foreground",
                 )}
               >
                 <div className="flex items-center justify-between font-semibold text-xs">
-                  <span>IPv6-only (仅 IPv6)</span>
+                  <span className="text-foreground">IPv6-only (纯 IPv6)</span>
                   {networkType === "ipv6_only" && (
-                    <Check className="size-3.5 text-primary" />
+                    <Check className="size-3.5 text-primary shrink-0" />
                   )}
                 </div>
-                <span className="text-[10px] text-muted-foreground mt-1">
-                  仅 IPv6（无 IPv4），起价低至 $3.50/月
+                <span className="text-[11px] text-muted-foreground mt-1 leading-normal">
+                  仅 IPv6 地址（无 IPv4），起步价格低至 $3.50/月
                 </span>
               </button>
             </div>
@@ -477,7 +479,7 @@ export function CreateLightsailModal({
                 )}
               </label>
               <Select value={bundleId} onValueChange={setBundleId}>
-                <SelectTrigger className="h-8 text-xs">
+                <SelectTrigger className="h-8 w-full text-xs">
                   <SelectValue placeholder="选择套餐规格" />
                 </SelectTrigger>
                 <SelectContent>
@@ -516,7 +518,7 @@ export function CreateLightsailModal({
                   每日快照执行时间 (UTC)
                 </label>
                 <Select value={snapshotTime} onValueChange={setSnapshotTime}>
-                  <SelectTrigger className="h-7 text-xs">
+                  <SelectTrigger className="h-7 w-full text-xs">
                     <SelectValue placeholder="选择快照时间" />
                   </SelectTrigger>
                   <SelectContent>
@@ -541,7 +543,7 @@ export function CreateLightsailModal({
               <button
                 type="button"
                 onClick={() => setShowUserData(!showUserData)}
-                className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1"
+                className="text-[11px] font-semibold text-foreground hover:text-primary flex items-center gap-1 cursor-pointer"
               >
                 <FileCode className="size-3 text-muted-foreground" />
                 {showUserData ? "收起" : "展开"} 启动脚本 (Cloud-init User Data
@@ -549,8 +551,8 @@ export function CreateLightsailModal({
               </button>
 
               {snippets.length > 0 && (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[10px] text-muted-foreground">
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <span className="text-[10px] text-muted-foreground whitespace-nowrap">
                     代码片段:
                   </span>
                   <Select
@@ -582,7 +584,7 @@ export function CreateLightsailModal({
                   value={userData}
                   onChange={(e) => setUserData(e.target.value)}
                   placeholder="#!/bin/bash&#10;# 服务器首次开机执行的脚本&#10;apt update -y"
-                  className="h-24 text-[11px] font-mono"
+                  className="h-28 w-full text-[11px] font-mono"
                 />
                 <p className="text-[10px] text-muted-foreground">
                   支持 Shell 脚本或 cloud-init
