@@ -1,41 +1,128 @@
-name: Release
-
-# Run by hand from a dev-X.Y.Z branch. stable releases X.Y.Z and merges the
-# branch into main; beta publishes X.Y.Z-beta.N for plugins on the beta
-# channel. overwrite releases the manifest version again from this commit.
+name: Release & Publish to Registry
 
 on:
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
-      channel:
-        description: "Stable release or beta"
-        required: true
-        default: stable
-        type: choice
-        options:
-          - stable
-          - beta
-      mode:
-        description: "release, overwrite (stable only) or dry-run"
-        required: true
-        default: release
-        type: choice
-        options:
-          - release
-          - overwrite
-          - dry-run
+      tag:
+        description: "Release tag (e.g. v1.1.1)"
+        required: false
+        type: string
 
 permissions:
   contents: write
-  # Build provenance, so the community registry can check where the file
-  # was built.
-  id-token: write
-  attestations: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   release:
-    uses: Termix-SSH/Termix-Registry/.github/workflows/plugin-release.yml@main
-    with:
-      channel: ${{ inputs.channel }}
-      mode: ${{ inputs.mode }}
-    secrets: inherit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync version
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+        run: |
+          TAG="${INPUT_TAG:-$GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+          echo "Releasing tag: $TAG (version: $VERSION)"
+          echo "RELEASE_TAG=$TAG" >> "$GITHUB_ENV"
+          echo "RELEASE_VERSION=$VERSION" >> "$GITHUB_ENV"
+          node -e '
+            const fs = require("fs");
+            const ver = process.env.RELEASE_VERSION;
+            for (const file of ["manifest.json", "package.json"]) {
+              const data = JSON.parse(fs.readFileSync(file, "utf8"));
+              data.version = ver;
+              fs.writeFileSync(file, JSON.stringify(data, null, 2) + "\n", "utf8");
+            }
+          '
+
+      - name: Typecheck and test
+        run: |
+          npm run typecheck
+          npm test
+
+      - name: Build plugin
+        run: npm run build
+
+      - name: Validate plugin
+        run: npm run validate
+
+      - name: Pack plugin
+        run: |
+          mkdir -p dist
+          ./node_modules/.bin/termix-plugin pack --out dist/
+
+      - name: Sign plugin
+        env:
+          TERMIX_PLUGIN_SIGNING_KEY: ${{ secrets.TERMIX_PLUGIN_SIGNING_KEY }}
+        run: |
+          if [ -z "$TERMIX_PLUGIN_SIGNING_KEY" ]; then
+            echo "::error::Secret TERMIX_PLUGIN_SIGNING_KEY is missing!"
+            exit 1
+          fi
+          ./node_modules/.bin/termix-plugin sign dist/*.tmxplug
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="$RELEASE_TAG"
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists, uploading assets..."
+            gh release upload "$TAG" dist/*.tmxplug dist/*.tmxplug.sig --clobber
+          else
+            echo "Creating release $TAG..."
+            gh release create "$TAG" dist/*.tmxplug dist/*.tmxplug.sig --title "$TAG" --generate-notes
+          fi
+
+      - name: Update Termix Registry
+        env:
+          REGISTRY_DEPLOY_KEY: ${{ secrets.REGISTRY_DEPLOY_KEY }}
+        run: |
+          if [ -z "$REGISTRY_DEPLOY_KEY" ]; then
+            echo "::error::Secret REGISTRY_DEPLOY_KEY is missing!"
+            exit 1
+          fi
+
+          mkdir -p ~/.ssh
+          echo "$REGISTRY_DEPLOY_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+
+          git clone git@github.com:cong-yuan/termix-registry.git /tmp/termix-registry
+
+          PKG_FILE=$(ls dist/*.tmxplug | head -n 1)
+          SIG_FILE="${PKG_FILE}.sig"
+
+          node .github/scripts/update-registry.mjs /tmp/termix-registry manifest.json "$PKG_FILE" "$SIG_FILE" "$RELEASE_TAG"
+
+          cd /tmp/termix-registry
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(registry): update cc-cloud-providers to $RELEASE_TAG"
+            git push origin main
+            echo "Successfully updated registry index.json!"
+          else
+            echo "No changes in registry index.json."
+          fi

@@ -13,6 +13,7 @@
     "sign": "termix-plugin sign",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "tag": "node scripts/tag.mjs",
     "prepare": "husky || true"
   },
   "devDependencies": {
