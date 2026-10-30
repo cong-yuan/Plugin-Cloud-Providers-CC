@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Check,
   ChevronDown,
   ChevronRight,
   Cloud,
@@ -26,8 +25,10 @@ import {
 } from "@termix-ssh/plugin-sdk/frontend";
 import {
   Button,
+  ListBadge,
   ListRow,
   ListRowAction,
+  cn,
   useConfirm,
 } from "@termix-ssh/plugin-sdk/ui";
 import {
@@ -44,8 +45,50 @@ import { DiscoverView } from "./DiscoverView";
 import { CloudCard } from "./CloudCard";
 
 const TAB_ID = "cc-cloud-providers";
-const DEFAULT_CREDITS_LABEL =
-  "{Credits remaining [$200.00 USD] Days remaining 182 days (Apr 29, 2027)}";
+
+function parseCredits(credits?: string | null) {
+  if (!credits) {
+    return {
+      amount: "$200",
+      remaining: "remaining 182 days (Apr 29, 2027)",
+    };
+  }
+
+  // Match currency amount: e.g. "$200.00 USD" or "$200.00" or "$200" or "¥200" or "€200"
+  const amountMatch =
+    credits.match(/([$¥€£]\s*[\d,]+(?:\.\d+)?(?:\s*[A-Z]{3})?)/i) ||
+    credits.match(/([$¥€£]\s*[\d,]+)/);
+  const rawAmount = amountMatch ? amountMatch[1].trim() : "$200";
+
+  // If rawAmount ends with ".00" or has "USD", clean it up: "$200.00 USD" -> "$200"
+  const cleanAmount = rawAmount
+    .replace(/\.00\b/, "")
+    .replace(/\s*USD/i, "")
+    .trim();
+
+  let rest = credits;
+  if (amountMatch) {
+    rest = rest.replace(amountMatch[0], "");
+  }
+
+  rest = rest
+    .replace(/[{}[\]]/g, "")
+    .replace(/credits remaining/gi, "")
+    .replace(/days remaining/gi, "")
+    .replace(/remaining/gi, "")
+    .trim();
+
+  if (rest) {
+    rest = `remaining ${rest}`;
+  } else {
+    rest = "remaining 182 days (Apr 29, 2027)";
+  }
+
+  return {
+    amount: cleanAmount,
+    remaining: rest,
+  };
+}
 
 type View =
   | { kind: "list" }
@@ -330,7 +373,7 @@ function CloudTab({ isVisible }: TabProps) {
         const isExpanded = expandedAccountIds.has(account.id);
         const instances = accountInstances[account.id] || [];
         const isLoading = loadingInstances[account.id];
-        const creditsText = account.credits || DEFAULT_CREDITS_LABEL;
+        const creditInfo = parseCredits(account.credits);
 
         return (
           <div key={account.id} className="flex flex-col">
@@ -350,12 +393,14 @@ function CloudTab({ isVisible }: TabProps) {
               }
               title={
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-semibold text-foreground text-sm">
+                  <span className="font-semibold text-foreground text-[13px]">
                     {account.name}
                   </span>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
-                    <span className="size-1.5 rounded-full bg-emerald-500 shrink-0" />
-                    <span>{creditsText}</span>
+                  <span className="inline-flex items-center rounded bg-emerald-500/15 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 border border-emerald-500/30">
+                    {creditInfo.amount}
+                  </span>
+                  <span className="text-[11px] text-muted-foreground/80 font-normal">
+                    {creditInfo.remaining}
                   </span>
                 </div>
               }
@@ -374,7 +419,7 @@ function CloudTab({ isVisible }: TabProps) {
                 </span>
               }
               actions={
-                <div onClick={(e) => e.stopPropagation()}>
+                <>
                   <ListRowAction
                     label={t("test")}
                     disabled={busy === account.id}
@@ -408,13 +453,13 @@ function CloudTab({ isVisible }: TabProps) {
                   >
                     <Trash2 />
                   </ListRowAction>
-                </div>
+                </>
               }
             />
 
-            {/* Expanded Server / Instance List */}
+            {/* Expanded Server / Instance List (Sub-list) */}
             {isExpanded && (
-              <div className="ml-7 -mt-1 mb-3 rounded-lg border border-border/70 bg-card/60 p-2.5 flex flex-col gap-1.5 shadow-sm animate-in fade-in-50 duration-200">
+              <div className="ml-[27px] border-l border-border/40 bg-muted/[0.04] [&>*:last-child]:border-b-0 animate-in fade-in-50 duration-150">
                 {isLoading ? (
                   <div className="flex items-center gap-2 py-3 px-3 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin text-accent-brand" />
@@ -427,7 +472,7 @@ function CloudTab({ isVisible }: TabProps) {
                       type="button"
                       size="sm"
                       variant="ghost"
-                      className="h-7 text-xs"
+                      className="h-6 text-xs text-muted-foreground hover:text-foreground"
                       onClick={(e) => {
                         e.stopPropagation();
                         void loadInstances(account.id);
@@ -437,141 +482,109 @@ function CloudTab({ isVisible }: TabProps) {
                     </Button>
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-1">
-                    <div className="flex items-center justify-between px-2.5 py-1 text-[11px] text-muted-foreground font-medium border-b border-border/40 pb-1.5 mb-0.5">
-                      <span>所属服务器 ({instances.length})</span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="ghost"
-                        className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void loadInstances(account.id);
-                        }}
-                      >
-                        <RefreshCw className="mr-1 size-3" /> 刷新列表
-                      </Button>
-                    </div>
+                  instances.map((instance, instIndex) => {
+                    const isLightsail = instance.id.startsWith("lightsail/");
+                    const tagLabel = isLightsail ? "光帆" : "ECS";
+                    const tagTone = isLightsail ? "warning" : "brand";
+                    const ip =
+                      instance.address ||
+                      instance.publicIp ||
+                      instance.privateIp ||
+                      "无公网 IP";
+                    const isRunning = instance.state === "running";
 
-                    {instances.map((instance) => {
-                      const isLightsail = instance.id.startsWith("lightsail/");
-                      const tagLabel = isLightsail ? "光帆" : "ECS";
-                      const tagClass = isLightsail
-                        ? "bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30"
-                        : "bg-sky-500/15 text-sky-600 dark:text-sky-400 border-sky-500/30";
-                      const ip =
-                        instance.address ||
-                        instance.publicIp ||
-                        instance.privateIp ||
-                        "无公网 IP";
-                      const isRunning = instance.state === "running";
-
-                      return (
-                        <div
-                          key={instance.id}
-                          className="group relative flex items-center justify-between rounded-md px-3 py-2 text-xs transition-colors hover:bg-muted/50 border border-transparent hover:border-border/60"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span
-                              className={`size-2 rounded-full shrink-0 ${isRunning ? "bg-emerald-500" : "bg-muted-foreground/40"}`}
-                              title={isRunning ? "运行中" : instance.state}
-                            />
-                            <span
-                              className={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold border ${tagClass}`}
-                            >
-                              {tagLabel}
-                            </span>
-                            <span className="font-medium text-foreground truncate max-w-[150px] sm:max-w-[200px]">
+                    return (
+                      <ListRow
+                        key={instance.id}
+                        stripe={instIndex}
+                        onClick={() => void handleConnect(account, instance)}
+                        className="cursor-pointer select-none"
+                        icon={
+                          <span
+                            className={cn(
+                              "size-2 rounded-full shrink-0",
+                              isRunning
+                                ? "bg-emerald-500"
+                                : "bg-muted-foreground/40",
+                            )}
+                            title={isRunning ? "运行中" : instance.state}
+                          />
+                        }
+                        title={
+                          <div className="flex items-center gap-2">
+                            <ListBadge tone={tagTone}>{tagLabel}</ListBadge>
+                            <span className="font-semibold text-foreground text-[13px] truncate">
                               {instance.name}
                             </span>
-                            <span className="text-muted-foreground font-mono text-[11px] shrink-0">
-                              {ip}
-                            </span>
-                            {instance.region && (
-                              <span className="hidden sm:inline-block text-[10px] text-muted-foreground/70 bg-muted/40 px-1.5 py-0.5 rounded">
-                                {instance.region}
-                              </span>
-                            )}
                             {instance.imported && (
-                              <span className="inline-flex items-center gap-1 rounded bg-muted/60 px-1.5 py-0.5 text-[10px] text-muted-foreground border border-border/40">
-                                <Check className="size-2.5 text-emerald-500" />{" "}
-                                已导入
-                              </span>
+                              <ListBadge tone="success">已导入</ListBadge>
                             )}
                           </div>
-
-                          {/* Hover action toolbar */}
-                          <div className="flex items-center gap-1 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity shrink-0 ml-2">
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="default"
-                              className="h-6 px-2 text-[11px] gap-1 shadow-sm bg-accent-brand text-accent-brand-foreground hover:bg-accent-brand/90"
+                        }
+                        meta={
+                          <span className="flex items-center gap-2 text-[11px]">
+                            <span>
+                              IP:{" "}
+                              <code className="font-mono text-foreground/80">
+                                {ip}
+                              </code>
+                            </span>
+                            {instance.region && (
+                              <span>· {instance.region}</span>
+                            )}
+                            <span>
+                              ·{" "}
+                              {isRunning
+                                ? "运行中"
+                                : instance.state || "已停止"}
+                            </span>
+                          </span>
+                        }
+                        actions={
+                          <>
+                            <ListRowAction
+                              label="连接"
+                              tone="brand"
                               disabled={importingId === instance.id}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleConnect(account, instance);
-                              }}
-                              title="连接此服务器"
+                              onClick={() =>
+                                void handleConnect(account, instance)
+                              }
                             >
-                              <Terminal className="size-3" />
-                              <span>连接</span>
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSftp(instance);
-                              }}
-                              title="SFTP 文件管理器"
+                              <Terminal />
+                            </ListRowAction>
+                            <ListRowAction
+                              label="SFTP"
+                              onClick={() => handleSftp(instance)}
                             >
-                              <Folder className="size-3" />
-                              <span className="hidden md:inline ml-1">
-                                SFTP
-                              </span>
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="ghost"
-                              className="h-6 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
+                              <Folder />
+                            </ListRowAction>
+                            <ListRowAction
+                              label="复制 IP"
+                              onClick={() => {
                                 if (ip && ip !== "无公网 IP") {
                                   void navigator.clipboard.writeText(ip);
                                   toast.success(`已复制 IP: ${ip}`);
                                 }
                               }}
-                              title="复制 IP"
                             >
-                              <Copy className="size-3" />
-                            </Button>
+                              <Copy />
+                            </ListRowAction>
                             {!instance.imported && (
-                              <Button
-                                type="button"
-                                size="sm"
-                                variant="outline"
-                                className="h-6 px-2 text-[11px] gap-1 border-dashed"
+                              <ListRowAction
+                                label="导入为主机"
                                 disabled={importingId === instance.id}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  void handleImportOnly(account, instance);
-                                }}
-                                title="仅导入为 Termix 主机"
+                                onClick={() =>
+                                  void handleImportOnly(account, instance)
+                                }
                               >
-                                <DownloadCloud className="size-3" />
-                                <span>导入</span>
-                              </Button>
+                                <DownloadCloud />
+                              </ListRowAction>
                             )}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                          </>
+                        }
+                      />
+                    );
+                  })
                 )}
               </div>
             )}
