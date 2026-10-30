@@ -397,49 +397,70 @@ export function CreateLightsailModal({
           </div>
 
           {/* 2. 网络类型与套餐规格配置 */}
-          <div className="flex flex-col gap-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+          <div className="flex flex-col gap-2.5 rounded-lg border border-border/60 bg-muted/20 p-2.5">
             {/* 网络类型切换 */}
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
-                <Network className="size-3 text-primary" />
-                {t("lightsail.networkType")}
-              </span>
-              <div className="inline-flex p-0.5 rounded-md bg-muted/60 border border-border/60 h-7 items-center">
+            <div className="flex flex-col gap-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-[11px] font-semibold text-foreground flex items-center gap-1.5">
+                  <Network className="size-3 text-primary" />
+                  <span>{t("lightsail.networkType")}</span>
+                </label>
+                <span className="text-[10px] text-muted-foreground">
+                  {networkType === "dual_stack"
+                    ? t("lightsail.dualStackHint", {
+                        defaultValue: "Includes Public IPv4 + IPv6",
+                      })
+                    : t("lightsail.ipv6OnlyHint", {
+                        defaultValue: "IPv6 only, lower monthly cost",
+                      })}
+                </span>
+              </div>
+
+              {/* 2个等宽 Segment 选项卡 */}
+              <div className="grid grid-cols-2 gap-1.5 p-1 rounded-md bg-muted/50 border border-border/60">
                 <button
                   type="button"
                   onClick={() => handleNetworkTypeChange("dual_stack")}
                   className={cn(
-                    "h-6 px-2.5 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
+                    "h-7 px-2.5 rounded text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap select-none",
                     networkType === "dual_stack"
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground",
+                      ? "bg-background text-foreground shadow-xs font-semibold ring-1 ring-border/50"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/40",
                   )}
                 >
-                  {networkType === "dual_stack" && (
-                    <Check className="size-3 text-primary shrink-0" />
-                  )}
+                  <Check
+                    className={cn(
+                      "size-3 text-primary shrink-0 transition-opacity",
+                      networkType === "dual_stack"
+                        ? "opacity-100"
+                        : "opacity-0",
+                    )}
+                  />
                   <span>{t("lightsail.dualStack")}</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleNetworkTypeChange("ipv6_only")}
                   className={cn(
-                    "h-6 px-2.5 flex items-center justify-center gap-1 rounded text-[11px] font-medium transition-all select-none cursor-pointer",
+                    "h-7 px-2.5 rounded text-xs font-medium transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap select-none",
                     networkType === "ipv6_only"
-                      ? "bg-background text-foreground shadow-xs font-semibold"
-                      : "text-muted-foreground hover:text-foreground",
+                      ? "bg-background text-foreground shadow-xs font-semibold ring-1 ring-border/50"
+                      : "text-muted-foreground hover:text-foreground hover:bg-background/40",
                   )}
                 >
-                  {networkType === "ipv6_only" && (
-                    <Check className="size-3 text-primary shrink-0" />
-                  )}
+                  <Check
+                    className={cn(
+                      "size-3 text-primary shrink-0 transition-opacity",
+                      networkType === "ipv6_only" ? "opacity-100" : "opacity-0",
+                    )}
+                  />
                   <span>{t("lightsail.ipv6Only")}</span>
                 </button>
               </div>
             </div>
 
             {/* 套餐规格 (全宽，拥有充足宽度展示完整价格与配置) */}
-            <div className="flex flex-col gap-1 pt-0.5">
+            <div className="flex flex-col gap-1">
               <label className="text-[11px] font-semibold text-foreground flex items-center justify-between">
                 <span>
                   {networkType === "dual_stack"
@@ -454,7 +475,10 @@ export function CreateLightsailModal({
                 )}
               </label>
               <Select value={bundleId} onValueChange={setBundleId}>
-                <SelectTrigger size="sm" className="h-8 w-full text-xs px-2.5">
+                <SelectTrigger
+                  size="sm"
+                  className="h-8 w-full text-xs px-2.5 truncate"
+                >
                   <SelectValue placeholder={t("lightsail.bundlePlaceholder")} />
                 </SelectTrigger>
                 <SelectContent>

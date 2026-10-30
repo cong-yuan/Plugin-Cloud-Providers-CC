@@ -142,6 +142,8 @@
     "networkType": "Networking Type",
     "dualStack": "Dual-stack (IPv4 + IPv6)",
     "ipv6Only": "IPv6-only (from $3.5/mo)",
+    "dualStackHint": "Includes Public IPv4 + IPv6",
+    "ipv6OnlyHint": "IPv6 only, lower monthly cost",
     "bundle": "Bundle / Plan",
     "bundleDualStack": "Dual-stack Plan",
     "bundleIpv6Only": "IPv6-only Plan",

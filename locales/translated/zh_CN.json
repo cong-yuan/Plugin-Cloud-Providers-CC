@@ -142,6 +142,8 @@
     "networkType": "网络类型",
     "dualStack": "双栈 (IPv4 + IPv6)",
     "ipv6Only": "纯 IPv6 (低至 $3.5/月)",
+    "dualStackHint": "标配公网 IPv4 + IPv6",
+    "ipv6OnlyHint": "仅分配 IPv6，成本更低",
     "bundle": "套餐规格",
     "bundleDualStack": "双栈套餐规格",
     "bundleIpv6Only": "纯 IPv6 套餐规格",
