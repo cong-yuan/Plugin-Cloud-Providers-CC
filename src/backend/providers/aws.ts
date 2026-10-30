@@ -1,11 +1,26 @@
 import crypto from "node:crypto";
 import type { PluginFetch } from "@termix-ssh/plugin-sdk/backend";
-import { signV4 } from "./auth/sigv4.js";
-import { send, splitList } from "./http.js";
-import { child, childText, items, parseXml } from "./xml.js";
+import { FetchHttpHandler } from "@smithy/fetch-http-handler";
+import {
+  EC2Client,
+  DescribeRegionsCommand,
+  DescribeInstancesCommand,
+} from "@aws-sdk/client-ec2";
+import {
+  LightsailClient,
+  GetInstancesCommand,
+  DownloadDefaultKeyPairCommand,
+  GetInstanceMetricDataCommand,
+  CreateInstancesCommand,
+  GetInstancePortStatesCommand,
+  OpenInstancePublicPortsCommand,
+  CloseInstancePublicPortsCommand,
+  GetRegionsCommand,
+  GetBundlesCommand,
+} from "@aws-sdk/client-lightsail";
+import { splitList } from "./http.js";
 import type { CloudInstance, Credentials, Provider } from "./types.js";
 
-const EC2_VERSION = "2016-11-15";
 const LIGHTSAIL_REGIONS = [
   "us-east-1",
   "us-east-2",
@@ -23,87 +38,118 @@ const LIGHTSAIL_REGIONS = [
   "ap-northeast-2",
 ];
 
-interface Keys {
-  accessKeyId: string;
-  secretAccessKey: string;
-  sessionToken?: string;
+function createRequestHandler(fetch?: PluginFetch) {
+  if (fetch) {
+    return new FetchHttpHandler({
+      customFetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        if (input instanceof Request) {
+          const headers: Record<string, string> = {};
+          input.headers.forEach((v, k) => {
+            headers[k.toLowerCase()] = v;
+          });
+          let body: string | undefined = undefined;
+          if (input.method !== "GET" && input.method !== "HEAD") {
+            body = await input.text();
+          }
+          return fetch(input.url, {
+            method: input.method,
+            headers,
+            body: body || undefined,
+          });
+        }
+        return fetch(
+          typeof input === "string" ? input : input.toString(),
+          init as any,
+        );
+      },
+    });
+  }
+  return new FetchHttpHandler();
 }
 
-function keys(creds: Credentials): Keys {
-  return {
-    accessKeyId: creds.accessKeyId,
-    secretAccessKey: creds.secretAccessKey,
-    sessionToken: creds.sessionToken || undefined,
-  };
-}
-
-async function ec2Call(
-  fetch: PluginFetch,
+function getEc2Client(
   creds: Credentials,
   region: string,
-  params: Record<string, string>,
-): Promise<ReturnType<typeof parseXml>> {
-  const url = `https://ec2.${region}.amazonaws.com/`;
-  const body = new URLSearchParams({
-    ...params,
-    Version: EC2_VERSION,
-  }).toString();
-  const headers = signV4({
-    method: "POST",
-    url,
+  fetch?: PluginFetch,
+): EC2Client {
+  return new EC2Client({
     region,
-    service: "ec2",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body,
-    ...keys(creds),
+    credentials: {
+      accessKeyId: creds.accessKeyId,
+      secretAccessKey: creds.secretAccessKey,
+      sessionToken: creds.sessionToken || undefined,
+    },
+    requestHandler: createRequestHandler(fetch),
   });
-  const response = await send(fetch, url, { method: "POST", headers, body });
-  return parseXml(await response.text());
+}
+
+function getLightsailClient(
+  creds: Credentials,
+  region: string,
+  fetch?: PluginFetch,
+): LightsailClient {
+  return new LightsailClient({
+    region,
+    credentials: {
+      accessKeyId: creds.accessKeyId,
+      secretAccessKey: creds.secretAccessKey,
+      sessionToken: creds.sessionToken || undefined,
+    },
+    requestHandler: createRequestHandler(fetch),
+  });
 }
 
 async function regionsFor(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
 ): Promise<string[]> {
   const chosen = splitList(creds.regions);
   if (chosen.length && !chosen.includes("all")) return chosen;
-  const root = await ec2Call(fetch, creds, "us-east-1", {
-    Action: "DescribeRegions",
-  });
-  const names = items(root, "regionInfo")
-    .map((r) => childText(r, "regionName"))
-    .filter((n): n is string => Boolean(n));
-  return names.length ? names : ["us-east-1"];
+  try {
+    const client = getEc2Client(creds, "us-east-1", fetch);
+    const res = await client.send(new DescribeRegionsCommand({}));
+    const names = (res.Regions ?? [])
+      .map((r) => r.RegionName)
+      .filter((n): n is string => Boolean(n));
+    return names.length ? names : ["us-east-1"];
+  } catch {
+    return ["us-east-1"];
+  }
 }
 
 async function listEc2(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   region: string,
 ): Promise<CloudInstance[]> {
   const out: CloudInstance[] = [];
+  const client = getEc2Client(creds, region, fetch);
   let token: string | undefined;
+
   for (let page = 0; page < 200; page += 1) {
-    const params: Record<string, string> = { Action: "DescribeInstances" };
-    if (token) params.NextToken = token;
-    const root = await ec2Call(fetch, creds, region, params);
-    for (const reservation of items(root, "reservationSet")) {
-      for (const node of items(reservation, "instancesSet")) {
-        const state = childText(child(node, "instanceState"), "name");
+    const res = await client.send(
+      new DescribeInstancesCommand({
+        NextToken: token,
+      }),
+    );
+
+    for (const reservation of res.Reservations ?? []) {
+      for (const node of reservation.Instances ?? []) {
+        const state = node.State?.Name;
         if (state === "terminated" || state === "shutting-down") continue;
-        const tags = items(node, "tagSet").map((t) => ({
-          key: childText(t, "key") ?? "",
-          value: childText(t, "value") ?? "",
+        const tags = (node.Tags ?? []).map((t) => ({
+          key: t.Key ?? "",
+          value: t.Value ?? "",
         }));
-        const id = childText(node, "instanceId") ?? "";
-        const keyName = childText(node, "keyName");
-        const platform = childText(node, "platform");
-        const az = childText(child(node, "placement"), "availabilityZone");
+        const id = node.InstanceId ?? "";
+        const keyName = node.KeyName;
+        const platform = node.Platform;
+        const az = node.Placement?.AvailabilityZone;
         const inst: CloudInstance = {
           id: `${region}/${id}`,
           name: tags.find((t) => t.key === "Name")?.value || id,
-          publicIp: childText(node, "ipAddress") ?? null,
-          privateIp: childText(node, "privateIpAddress") ?? null,
+          publicIp: node.PublicIpAddress ?? null,
+          privateIp: node.PrivateIpAddress ?? null,
           region: az || region,
           state:
             state === "running"
@@ -116,7 +162,7 @@ async function listEc2(
             .map((t) => (t.value ? `${t.key}:${t.value}` : t.key)),
         };
         if (keyName) inst.keyName = keyName;
-        if (platform === "windows") inst.user = "Administrator";
+        if (platform?.toLowerCase() === "windows") inst.user = "Administrator";
         inst.network = {
           type: "pay_as_you_go",
           label: "按量计费 (最高 5 Gbps)",
@@ -124,7 +170,7 @@ async function listEc2(
         out.push(inst);
       }
     }
-    token = childText(root, "nextToken");
+    token = res.NextToken;
     if (!token) break;
   }
   return out;
@@ -134,41 +180,6 @@ interface LightsailPort {
   fromPort: number;
   toPort: number;
   protocol: string;
-}
-
-interface LightsailInstance {
-  name: string;
-  arn?: string;
-  supportCode?: string;
-  createdAt?: string;
-  blueprintId?: string;
-  blueprintName?: string;
-  bundleId?: string;
-  isStaticIp?: boolean;
-  username?: string;
-  sshKeyName?: string;
-  publicIpAddress?: string;
-  privateIpAddress?: string;
-  state?: { name?: string };
-  location?: {
-    availabilityZone?: string;
-    regionName?: string;
-  };
-  hardware?: {
-    cpuCount?: number;
-    ramSizeInGb?: number;
-    disks?: Array<{
-      sizeInGb?: number;
-      isSystemDisk?: boolean;
-    }>;
-  };
-  tags?: Array<{ key: string; value?: string }>;
-  networking?: {
-    ports?: LightsailPort[];
-    monthlyTransfer?: {
-      gbPerMonthAllocated?: number;
-    };
-  };
 }
 
 function toRsaPrivateKeyPem(raw: string): string {
@@ -259,57 +270,15 @@ function rsaToOpenSshPublicKey(
   return "";
 }
 
-async function downloadLightsailDefaultKeyPair(
-  fetch: PluginFetch,
-  creds: Credentials,
-  region: string,
-): Promise<{
-  name: string;
-  privateKey: string;
-  publicKey: string;
-  keyType: string;
-} | null> {
-  try {
-    const url = `https://lightsail.${region}.amazonaws.com/`;
-    const body = "{}";
-    const headers = signV4({
-      method: "POST",
-      url,
-      region,
-      service: "lightsail",
-      headers: {
-        "content-type": "application/x-amz-json-1.1",
-        "x-amz-target": "Lightsail_20161128.DownloadDefaultKeyPair",
-      },
-      body,
-      ...keys(creds),
-    });
-    const response = await send(fetch, url, { method: "POST", headers, body });
-    const json = (await response.json()) as {
-      privateKeyBase64?: string;
-      publicKeyBase64?: string;
-    };
-    if (!json.privateKeyBase64) return null;
-    const privateKey = toRsaPrivateKeyPem(json.privateKeyBase64);
-    const publicKey = rsaToOpenSshPublicKey(privateKey, json.publicKeyBase64);
-    return {
-      name: `Lightsail-${region}-DefaultKeyPair`,
-      privateKey,
-      publicKey,
-      keyType: "ssh-rsa",
-    };
-  } catch {
-    return null;
-  }
-}
-
-function detectLightsailPort(i: LightsailInstance): number {
+function detectLightsailPort(i: {
+  tags?: Array<{ key?: string; value?: string }>;
+}): number {
   for (const t of i.tags ?? []) {
-    if (t.key.toLowerCase() === "termix-port" && t.value) {
+    if (t.key?.toLowerCase() === "termix-port" && t.value) {
       const p = Number(t.value);
       if (p > 0 && p <= 65535) return p;
     }
-    const match = /^termix-port[:=](\d+)$/i.exec(t.key);
+    const match = /^termix-port[:=](\d+)$/i.exec(t.key || "");
     if (match) {
       const p = Number(match[1]);
       if (p > 0 && p <= 65535) return p;
@@ -319,49 +288,33 @@ function detectLightsailPort(i: LightsailInstance): number {
 }
 
 async function getLightsailMetric(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   region: string,
   instanceName: string,
 ): Promise<number | null> {
   try {
-    const url = `https://lightsail.${region}.amazonaws.com/`;
+    const client = getLightsailClient(creds, region, fetch);
     const now = new Date();
-    const startTime = Math.floor(
-      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1) / 1000,
+    const startTime = new Date(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1),
     );
-    const endTime = Math.floor(Date.now() / 1000);
+    const endTime = now;
 
-    const body = JSON.stringify({
-      instanceName,
-      metricName: "NetworkOut",
-      period: 86400,
-      startTime,
-      endTime,
-      unit: "Bytes",
-      statistics: ["Sum"],
-    });
+    const res = await client.send(
+      new GetInstanceMetricDataCommand({
+        instanceName,
+        metricName: "NetworkOut",
+        period: 86400,
+        startTime,
+        endTime,
+        unit: "Bytes",
+        statistics: ["Sum"],
+      }),
+    );
 
-    const headers = signV4({
-      method: "POST",
-      url,
-      region,
-      service: "lightsail",
-      headers: {
-        "content-type": "application/x-amz-json-1.1",
-        "x-amz-target": "Lightsail_20161128.GetInstanceMetricData",
-      },
-      body,
-      ...keys(creds),
-    });
-
-    const response = await send(fetch, url, { method: "POST", headers, body });
-    if (!response.ok) return null;
-    const json = (await response.json()) as {
-      metricData?: Array<{ sum?: number }>;
-    };
-    if (json.metricData && json.metricData.length > 0) {
-      const totalBytes = json.metricData.reduce(
+    if (res.metricData && res.metricData.length > 0) {
+      const totalBytes = res.metricData.reduce(
         (acc, dp) => acc + (dp.sum || 0),
         0,
       );
@@ -373,13 +326,40 @@ async function getLightsailMetric(
   }
 }
 
+async function downloadLightsailDefaultKeyPair(
+  fetch: PluginFetch | undefined,
+  creds: Credentials,
+  region: string,
+): Promise<{
+  name: string;
+  privateKey: string;
+  publicKey: string;
+  keyType: string;
+} | null> {
+  try {
+    const client = getLightsailClient(creds, region, fetch);
+    const res = await client.send(new DownloadDefaultKeyPairCommand({}));
+    if (!res.privateKeyBase64) return null;
+    const privateKey = toRsaPrivateKeyPem(res.privateKeyBase64);
+    const publicKey = rsaToOpenSshPublicKey(privateKey, res.publicKeyBase64);
+    return {
+      name: `Lightsail-${region}-DefaultKeyPair`,
+      privateKey,
+      publicKey,
+      keyType: "ssh-rsa",
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function listLightsail(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   region: string,
 ): Promise<CloudInstance[]> {
   const out: CloudInstance[] = [];
-  const url = `https://lightsail.${region}.amazonaws.com/`;
+  const client = getLightsailClient(creds, region, fetch);
   let pageToken: string | undefined;
   let defaultKeyPromise: Promise<{
     name: string;
@@ -389,30 +369,18 @@ async function listLightsail(
   } | null> | null = null;
 
   for (let page = 0; page < 200; page += 1) {
-    const body = JSON.stringify(pageToken ? { pageToken } : {});
-    const headers = signV4({
-      method: "POST",
-      url,
-      region,
-      service: "lightsail",
-      headers: {
-        "content-type": "application/x-amz-json-1.1",
-        "x-amz-target": "Lightsail_20161128.GetInstances",
-      },
-      body,
-      ...keys(creds),
-    });
-    const response = await send(fetch, url, { method: "POST", headers, body });
-    const json = (await response.json()) as {
-      instances?: LightsailInstance[];
-      nextPageToken?: string;
-    };
-    for (const i of json.instances ?? []) {
+    const res = await client.send(
+      new GetInstancesCommand({
+        pageToken,
+      }),
+    );
+
+    for (const i of res.instances ?? []) {
       const port = detectLightsailPort(i);
       const zone = i.location?.availabilityZone || region;
       const inst: CloudInstance = {
         id: `lightsail/${region}/${i.name}`,
-        name: i.name,
+        name: i.name ?? "",
         publicIp: i.publicIpAddress ?? null,
         privateIp: i.privateIpAddress ?? null,
         region: zone,
@@ -423,7 +391,7 @@ async function listLightsail(
               ? "stopped"
               : "other",
         tags: (i.tags ?? []).map((t) =>
-          t.value ? `${t.key}:${t.value}` : t.key,
+          t.value ? `${t.key}:${t.value}` : (t.key ?? ""),
         ),
         details: {
           blueprintId: i.blueprintId,
@@ -435,7 +403,10 @@ async function listLightsail(
           isStaticIp: i.isStaticIp,
           availabilityZone: i.location?.availabilityZone,
           regionName: i.location?.regionName,
-          createdAt: i.createdAt,
+          createdAt:
+            typeof i.createdAt === "string"
+              ? i.createdAt
+              : (i.createdAt as Date)?.toISOString?.(),
           arn: i.arn,
         },
       };
@@ -455,7 +426,7 @@ async function listLightsail(
           label: `${quotaStr}/月`,
         };
 
-        if (inst.state === "running") {
+        if (inst.state === "running" && i.name) {
           try {
             const usedBytes = await Promise.race([
               getLightsailMetric(fetch, creds, region, i.name),
@@ -494,7 +465,7 @@ async function listLightsail(
 
       out.push(inst);
     }
-    pageToken = json.nextPageToken;
+    pageToken = res.nextPageToken;
     if (!pageToken) break;
   }
   return out;
@@ -773,14 +744,13 @@ export interface CreateLightsailInput {
 }
 
 export async function createLightsailInstance(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   input: CreateLightsailInput,
 ): Promise<{ ok: boolean; instanceName: string }> {
   const region = cleanAwsRegion(
     input.region || input.availabilityZone || "us-east-2",
   );
-  const url = `https://lightsail.${region}.amazonaws.com/`;
   let zone = input.availabilityZone?.trim();
   if (!zone || !zone.startsWith(region)) {
     zone = `${region}a`;
@@ -804,42 +774,22 @@ export async function createLightsailInstance(
     });
   }
 
-  const payload: any = {
-    instanceNames: [input.instanceName],
-    availabilityZone: zone,
-    blueprintId: input.blueprintId,
-    bundleId: input.bundleId,
-    ipAddressType,
-    keyPairName: input.keyPairName?.trim() || undefined,
-    userData: input.userData?.trim() || undefined,
-  };
-  if (addOns.length > 0) {
-    payload.addOns = addOns;
-  }
-
-  const body = JSON.stringify(payload);
-
-  const headers = signV4({
-    method: "POST",
-    url,
-    region,
-    service: "lightsail",
-    headers: {
-      "content-type": "application/x-amz-json-1.1",
-      "x-amz-target": "Lightsail_20161128.CreateInstances",
-    },
-    body,
-    ...keys(creds),
-  });
-
-  const res = await send(fetch, url, { method: "POST", headers, body });
-  if (!res.ok) {
-    const errText = await res.text();
-    let msg = `AWS Lightsail CreateInstances failed: ${errText}`;
-    try {
-      const errJson = JSON.parse(errText);
-      if (errJson.message) msg = errJson.message;
-    } catch {}
+  const client = getLightsailClient(creds, region, fetch);
+  try {
+    await client.send(
+      new CreateInstancesCommand({
+        instanceNames: [input.instanceName],
+        availabilityZone: zone,
+        blueprintId: input.blueprintId,
+        bundleId: input.bundleId,
+        ipAddressType: ipAddressType as any,
+        keyPairName: input.keyPairName?.trim() || undefined,
+        userData: input.userData?.trim() || undefined,
+        addOns: addOns.length > 0 ? addOns : undefined,
+      }),
+    );
+  } catch (err: any) {
+    const msg = err?.message || String(err);
     throw new Error(msg);
   }
 
@@ -855,39 +805,19 @@ export interface LightsailPortRule {
 }
 
 export async function getLightsailPortStates(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   region: string,
   instanceName: string,
 ): Promise<LightsailPortRule[]> {
   try {
-    const url = `https://lightsail.${region}.amazonaws.com/`;
-    const body = JSON.stringify({ instanceName });
-    const headers = signV4({
-      method: "POST",
-      url,
-      region,
-      service: "lightsail",
-      headers: {
-        "content-type": "application/x-amz-json-1.1",
-        "x-amz-target": "Lightsail_20161128.GetInstancePortStates",
-      },
-      body,
-      ...keys(creds),
-    });
-
-    const res = await send(fetch, url, { method: "POST", headers, body });
-    if (!res.ok) return [];
-    const json = (await res.json()) as {
-      portStates?: Array<{
-        fromPort?: number;
-        toPort?: number;
-        protocol?: string;
-        cidrs?: string[];
-        ipv6Cidrs?: string[];
-      }>;
-    };
-    return (json.portStates ?? []).map((p) => ({
+    const client = getLightsailClient(creds, region, fetch);
+    const res = await client.send(
+      new GetInstancePortStatesCommand({
+        instanceName,
+      }),
+    );
+    return (res.portStates ?? []).map((p) => ({
       fromPort: p.fromPort ?? 0,
       toPort: p.toPort ?? p.fromPort ?? 0,
       protocol: (p.protocol ?? "tcp").toLowerCase(),
@@ -900,7 +830,7 @@ export async function getLightsailPortStates(
 }
 
 export async function openLightsailPort(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   region: string,
   instanceName: string,
@@ -911,38 +841,28 @@ export async function openLightsailPort(
     cidrs?: string[];
   },
 ): Promise<boolean> {
-  const url = `https://lightsail.${region}.amazonaws.com/`;
-  const body = JSON.stringify({
-    instanceName,
-    portInfo: {
-      fromPort: rule.fromPort,
-      toPort: rule.toPort ?? rule.fromPort,
-      protocol: rule.protocol,
-      cidrs: rule.cidrs && rule.cidrs.length > 0 ? rule.cidrs : ["0.0.0.0/0"],
-    },
-  });
-  const headers = signV4({
-    method: "POST",
-    url,
-    region,
-    service: "lightsail",
-    headers: {
-      "content-type": "application/x-amz-json-1.1",
-      "x-amz-target": "Lightsail_20161128.OpenInstancePublicPorts",
-    },
-    body,
-    ...keys(creds),
-  });
-  const res = await send(fetch, url, { method: "POST", headers, body });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Open port failed: ${errText}`);
+  const client = getLightsailClient(creds, region, fetch);
+  try {
+    await client.send(
+      new OpenInstancePublicPortsCommand({
+        instanceName,
+        portInfo: {
+          fromPort: rule.fromPort,
+          toPort: rule.toPort ?? rule.fromPort,
+          protocol: rule.protocol as any,
+          cidrs:
+            rule.cidrs && rule.cidrs.length > 0 ? rule.cidrs : ["0.0.0.0/0"],
+        },
+      }),
+    );
+    return true;
+  } catch (err: any) {
+    throw new Error(`Open port failed: ${err?.message || String(err)}`);
   }
-  return true;
 }
 
 export async function closeLightsailPort(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   region: string,
   instanceName: string,
@@ -953,38 +873,28 @@ export async function closeLightsailPort(
     cidrs?: string[];
   },
 ): Promise<boolean> {
-  const url = `https://lightsail.${region}.amazonaws.com/`;
-  const body = JSON.stringify({
-    instanceName,
-    portInfo: {
-      fromPort: rule.fromPort,
-      toPort: rule.toPort ?? rule.fromPort,
-      protocol: rule.protocol,
-      cidrs: rule.cidrs && rule.cidrs.length > 0 ? rule.cidrs : ["0.0.0.0/0"],
-    },
-  });
-  const headers = signV4({
-    method: "POST",
-    url,
-    region,
-    service: "lightsail",
-    headers: {
-      "content-type": "application/x-amz-json-1.1",
-      "x-amz-target": "Lightsail_20161128.CloseInstancePublicPorts",
-    },
-    body,
-    ...keys(creds),
-  });
-  const res = await send(fetch, url, { method: "POST", headers, body });
-  if (!res.ok) {
-    const errText = await res.text();
-    throw new Error(`Close port failed: ${errText}`);
+  const client = getLightsailClient(creds, region, fetch);
+  try {
+    await client.send(
+      new CloseInstancePublicPortsCommand({
+        instanceName,
+        portInfo: {
+          fromPort: rule.fromPort,
+          toPort: rule.toPort ?? rule.fromPort,
+          protocol: rule.protocol as any,
+          cidrs:
+            rule.cidrs && rule.cidrs.length > 0 ? rule.cidrs : ["0.0.0.0/0"],
+        },
+      }),
+    );
+    return true;
+  } catch (err: any) {
+    throw new Error(`Close port failed: ${err?.message || String(err)}`);
   }
-  return true;
 }
 
 export async function getLightsailPlans(
-  fetch: PluginFetch,
+  fetch: PluginFetch | undefined,
   creds: Credentials,
   regionRaw: string,
 ): Promise<{
@@ -996,110 +906,74 @@ export async function getLightsailPlans(
   const region = cleanAwsRegion(regionRaw);
   const fallbackZones = [`${region}a`, `${region}b`, `${region}c`];
   try {
-    const url = `https://lightsail.${region}.amazonaws.com/`;
-    const regBody = JSON.stringify({ includeAvailabilityZones: true });
-    const regHeaders = signV4({
-      method: "POST",
-      url,
-      region,
-      service: "lightsail",
-      headers: {
-        "content-type": "application/x-amz-json-1.1",
-        "x-amz-target": "Lightsail_20161128.GetRegions",
-      },
-      body: regBody,
-      ...keys(creds),
-    });
-
-    const regRes = await send(fetch, url, {
-      method: "POST",
-      headers: regHeaders,
-      body: regBody,
-    });
+    const client = getLightsailClient(creds, region, fetch);
     let zones: string[] = fallbackZones;
-    if (regRes.ok) {
-      const regJson = (await regRes.json()) as {
-        regions?: Array<{
-          name?: string;
-          zones?: Array<{ name?: string }>;
-        }>;
-      };
-      const found = regJson.regions?.find((r) => r.name === region);
-      if (found?.zones && found.zones.length > 0) {
-        zones = found.zones.map((z) => z.name || "").filter(Boolean);
+
+    try {
+      const regRes = await client.send(
+        new GetRegionsCommand({
+          includeAvailabilityZones: true,
+        }),
+      );
+      const found = regRes.regions?.find((r) => r.name === region);
+      const azs = found?.availabilityZones || (found as any)?.zones;
+      if (azs && azs.length > 0) {
+        zones = azs.map((z: any) => z.zoneName || z.name || "").filter(Boolean);
       }
-    }
+    } catch {}
 
     let dualStackBundles = DEFAULT_DUAL_STACK_BUNDLES;
     let ipv6OnlyBundles = DEFAULT_IPV6_ONLY_BUNDLES;
 
     try {
-      const bundleBody = JSON.stringify({ includeInactive: false });
-      const bundleHeaders = signV4({
-        method: "POST",
-        url,
-        region,
-        service: "lightsail",
-        headers: {
-          "content-type": "application/x-amz-json-1.1",
-          "x-amz-target": "Lightsail_20161128.GetBundles",
-        },
-        body: bundleBody,
-        ...keys(creds),
-      });
-      const bundleRes = await send(fetch, url, {
-        method: "POST",
-        headers: bundleHeaders,
-        body: bundleBody,
-      });
-      if (bundleRes.ok) {
-        const bundleJson = (await bundleRes.json()) as {
-          bundles?: any[];
-        };
-        if (bundleJson.bundles && bundleJson.bundles.length > 0) {
-          const linuxBundles = bundleJson.bundles.filter(
-            (b) =>
-              b.isActive !== false &&
-              Array.isArray(b.supportedPlatforms) &&
-              b.supportedPlatforms.includes("LINUX_UNIX") &&
-              !b.bundleId.startsWith("m_") &&
-              !b.bundleId.startsWith("c_"),
-          );
-          const dual: typeof DEFAULT_DUAL_STACK_BUNDLES = [];
-          const ipv6: typeof DEFAULT_IPV6_ONLY_BUNDLES = [];
+      const bundleRes = await client.send(
+        new GetBundlesCommand({
+          includeInactive: false,
+        }),
+      );
+      if (bundleRes.bundles && bundleRes.bundles.length > 0) {
+        const linuxBundles = bundleRes.bundles.filter(
+          (b) =>
+            b.isActive !== false &&
+            Array.isArray(b.supportedPlatforms) &&
+            b.supportedPlatforms.includes("LINUX_UNIX") &&
+            b.bundleId &&
+            !b.bundleId.startsWith("m_") &&
+            !b.bundleId.startsWith("c_"),
+        );
+        const dual: typeof DEFAULT_DUAL_STACK_BUNDLES = [];
+        const ipv6: typeof DEFAULT_IPV6_ONLY_BUNDLES = [];
 
-          for (const b of linuxBundles) {
-            const isIpv6 = b.bundleId.includes("ipv6");
-            const ramStr =
-              b.ramSizeInGb >= 1
-                ? `${b.ramSizeInGb} GB`
-                : `${b.ramSizeInGb * 1024} MB`;
-            const tfGb = b.transferPerMonthInGb || 0;
-            const tfStr =
-              tfGb >= 1000
-                ? `${(tfGb / 1000).toFixed(tfGb % 1000 === 0 ? 0 : 1)} TB`
-                : `${tfGb} GB`;
-            const item = {
-              id: b.bundleId,
-              name: `$${Number(b.price).toFixed(2)}/月 · ${ramStr} 内存 / ${b.cpuCount || 1} 核 / ${b.diskSizeInGb} GB SSD / ${tfStr} 流量`,
-              price: b.price,
-              ramGb: b.ramSizeInGb,
-              vCpu: b.cpuCount || 1,
-              diskGb: b.diskSizeInGb,
-              transferGb: tfGb,
-            };
-            if (isIpv6) {
-              ipv6.push(item);
-            } else {
-              dual.push(item);
-            }
+        for (const b of linuxBundles) {
+          const bundleId = b.bundleId!;
+          const isIpv6 = bundleId.includes("ipv6");
+          const ram = b.ramSizeInGb || 0;
+          const ramStr = ram >= 1 ? `${ram} GB` : `${ram * 1024} MB`;
+          const tfGb = b.transferPerMonthInGb || 0;
+          const tfStr =
+            tfGb >= 1000
+              ? `${(tfGb / 1000).toFixed(tfGb % 1000 === 0 ? 0 : 1)} TB`
+              : `${tfGb} GB`;
+          const item = {
+            id: bundleId,
+            name: `$${Number(b.price || 0).toFixed(2)}/月 · ${ramStr} 内存 / ${b.cpuCount || 1} 核 / ${b.diskSizeInGb || 0} GB SSD / ${tfStr} 流量`,
+            price: b.price || 0,
+            ramGb: ram,
+            vCpu: b.cpuCount || 1,
+            diskGb: b.diskSizeInGb || 0,
+            transferGb: tfGb,
+          };
+          if (isIpv6) {
+            ipv6.push(item);
+          } else {
+            dual.push(item);
           }
-
-          dual.sort((a, b) => a.price - b.price);
-          ipv6.sort((a, b) => a.price - b.price);
-          if (dual.length > 0) dualStackBundles = dual;
-          if (ipv6.length > 0) ipv6OnlyBundles = ipv6;
         }
+
+        dual.sort((a, b) => a.price - b.price);
+        ipv6.sort((a, b) => a.price - b.price);
+        if (dual.length > 0) dualStackBundles = dual;
+        if (ipv6.length > 0) ipv6OnlyBundles = ipv6;
       }
     } catch {}
 

@@ -7,6 +7,7 @@ import {
   getLightsailPortStates,
   openLightsailPort,
   closeLightsailPort,
+  getLightsailPlans,
 } from "../../src/backend/providers/aws.js";
 import { ProviderError } from "../../src/backend/providers/types.js";
 import { fakeFetch, json, status, xml } from "./fake-fetch.js";
@@ -521,6 +522,61 @@ describe("aws", () => {
       { fromPort: 80, toPort: 80, protocol: "tcp" },
     );
     expect(closeBody.portInfo.fromPort).toBe(80);
+  });
+
+  it("fetches Lightsail plans, availability zones, and bundles via SDK", async () => {
+    const fetch = fakeFetch((url, init) => {
+      const target = init.headers["x-amz-target"];
+      if (target === "Lightsail_20161128.GetRegions") {
+        return json({
+          regions: [
+            {
+              name: "us-east-2",
+              availabilityZones: [
+                { zoneName: "us-east-2a" },
+                { zoneName: "us-east-2b" },
+              ],
+            },
+          ],
+        });
+      }
+      if (target === "Lightsail_20161128.GetBundles") {
+        return json({
+          bundles: [
+            {
+              bundleId: "nano_3_0",
+              price: 5.0,
+              cpuCount: 1,
+              ramSizeInGb: 0.5,
+              diskSizeInGb: 20,
+              transferPerMonthInGb: 1000,
+              supportedPlatforms: ["LINUX_UNIX"],
+              isActive: true,
+            },
+            {
+              bundleId: "nano_ipv6_3_0",
+              price: 3.5,
+              cpuCount: 1,
+              ramSizeInGb: 0.5,
+              diskSizeInGb: 20,
+              transferPerMonthInGb: 1000,
+              supportedPlatforms: ["LINUX_UNIX"],
+              isActive: true,
+            },
+          ],
+        });
+      }
+      return json({});
+    });
+
+    const plans = await getLightsailPlans(
+      fetch,
+      { accessKeyId: "AK", secretAccessKey: "SK" },
+      "us-east-2",
+    );
+    expect(plans.zones).toEqual(["us-east-2a", "us-east-2b"]);
+    expect(plans.dualStackBundles[0].id).toBe("nano_3_0");
+    expect(plans.ipv6OnlyBundles[0].id).toBe("nano_ipv6_3_0");
   });
 });
 
